@@ -17,11 +17,15 @@ export const isURL = (url: string) => {
 	}
 };
 
+export function joinRefIdName(ref_id: string | null | undefined, name: string | null | undefined) {
+	if (!ref_id) return name ?? '';
+	if (!name) return ref_id;
+	const sep = /[\p{L}\p{N}]$/u.test(ref_id) ? ' - ' : ' ';
+	return `${ref_id}${sep}${name}`;
+}
+
 export function getRequirementTitle(ref_id: string, name: string) {
-	const pattern = (ref_id ? 2 : 0) + (name ? 1 : 0);
-	const title: string =
-		pattern == 3 ? `${ref_id} - ${name}` : pattern == 2 ? ref_id : pattern == 1 ? name : '';
-	return title;
+	return joinRefIdName(ref_id, name);
 }
 
 export function displayScoreColor(value: number | null, max_score: number, inversedColors = false) {

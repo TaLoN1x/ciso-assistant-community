@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { complianceResultColorMap, complianceStatusColorMap } from '$lib/utils/constants';
-	import { darkenColor } from '$lib/utils/helpers';
+	import { darkenColor, joinRefIdName } from '$lib/utils/helpers';
 	import type { ReferenceControlSchema, ThreatSchema } from '$lib/utils/schemas';
 	import { Progress } from '@skeletonlabs/skeleton-svelte';
 	import { displayScoreColor, formatScoreValue } from '$lib/utils/helpers';
@@ -72,9 +72,7 @@
 
 	type TreeViewItemNode = typeof node;
 
-	const pattern = (ref_id ? 2 : 0) + (name ? 1 : 0);
-	const title: string =
-		pattern == 3 ? `${ref_id} - ${name}` : pattern == 2 ? ref_id : pattern == 1 ? name : '';
+	const title: string = joinRefIdName(ref_id, name);
 
 	let showInfo = $state(false);
 

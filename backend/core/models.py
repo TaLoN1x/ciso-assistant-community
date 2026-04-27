@@ -372,15 +372,14 @@ class ReferentialObjectMixin(AbstractBaseModel, FolderMixin):
 
     @property
     def display_short(self) -> str:
-        _name = (
-            self.ref_id
-            if not self.get_name_translated
-            else self.get_name_translated
-            if not self.ref_id
-            else f"{self.ref_id} - {self.get_name_translated}"
-        )
-        _name = "" if not _name else _name
-        return _name
+        ref_id = self.ref_id
+        name = self.get_name_translated
+        if not ref_id:
+            return name or ""
+        if not name:
+            return ref_id
+        sep = " - " if ref_id[-1].isalnum() else " "
+        return f"{ref_id}{sep}{name}"
 
     @property
     def display_long(self) -> str:

@@ -47,7 +47,12 @@ export const getOptions = ({
 	self?: Record<string, any>;
 	selfSelect?: boolean;
 }[] => {
-	const append = (x, y) => (!y ? x : !x || x == '' ? y : x + ' - ' + y);
+	const append = (x, y) => {
+		if (!y) return x;
+		if (!x || x === '') return y;
+		const sep = /[\p{L}\p{N}]$/u.test(x) ? ' - ' : ' ';
+		return x + sep + y;
+	};
 	const options = objects
 		.map((object) => {
 			const my_label =
