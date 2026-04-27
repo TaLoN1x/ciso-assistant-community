@@ -721,6 +721,7 @@
 	"requirementMappings": "ضرورت کی نقشہ سازی",
 	"sourceFramework": "ماخذ فریم ورک",
 	"targetFramework": "ہدف فریم ورک",
+	"targetFrameworks": "ہدف فریم ورکس",
 	"baseline": "بنیاد",
 	"createAuditFromBaseline": "بنیاد سے آڈٹ بنائیں",
 	"coverageColon": "کوریج:",
@@ -1110,5 +1111,8 @@
 	"confirmModalMessagePlural": "کیا آپ کو یقین ہے؟ یہ کارروائی درج ذیل اشیاء کو مستقل طور پر متاثر کرے گی",
 	"syncAppliedControlsMessage": "اس حوالہ کنٹرول کو استعمال کرنے والے اطلاق شدہ کنٹرولز اس کے ساتھ ہم آہنگ کر دیے جائیں گے۔ براہ کرم نوٹ کریں کہ یہ عمل واپس نہیں لیا جا سکتا۔",
 	"syncToAppliedControl": "لاگو کنٹرول کے ساتھ ہم آہنگ کریں",
-	"syncToReferenceControl": "حوالہ کنٹرول کے ساتھ ہم آہنگ کریں"
+	"syncToReferenceControl": "حوالہ کنٹرول کے ساتھ ہم آہنگ کریں",
+	"exportEcosystem": "ماحول کی برآمدگی (XLSX)",
+	"expirationDate": "میعاد ختم کی تاریخ",
+	"expirationDateIsInThePastWarning": "درج کی گئی میعاد ختم کی تاریخ ماضی میں ہے"
 }

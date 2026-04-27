@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import {
 		getBuilderContext,
 		getTranslation,
 		withTranslation,
 		type QuestionChoice
 	} from './builder-state';
-	import { createDragHandlers } from './builder-utils.svelte';
+	import { createHandleGatedDragHandlers } from './builder-utils.svelte';
 	import ConfirmAction from './ConfirmAction.svelte';
 
 	interface Props {
@@ -28,17 +29,41 @@
 
 	const builder = getBuilderContext();
 	const { errors: errorsStore, activeLanguage: activeLanguageStore } = builder;
-	const drag = createDragHandlers((from, to) =>
+	const drag = createHandleGatedDragHandlers((from, to) =>
 		builder.reorderChoices(reqNodeId, qIndex, from, to)
 	);
 	let expandedIndex: number | null = $state(null);
 
+	let listEl: HTMLDivElement;
+
 	async function saveField(choiceId: string, field: string, value: unknown) {
 		await builder.updateChoice(choiceId, { [field]: value });
 	}
+
+	async function handleChoiceKeydown(e: KeyboardEvent, choice: QuestionChoice, index: number) {
+		const input = e.currentTarget as HTMLInputElement;
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			const val = input.value.trim();
+			if (!val) return;
+			await saveField(choice.id, 'value', val);
+			builder.addChoice(reqNodeId, qIndex);
+			await tick();
+			const inputs = listEl?.querySelectorAll<HTMLInputElement>('.choice-value-input');
+			inputs?.[inputs.length - 1]?.focus();
+		} else if (e.key === 'Backspace' && !input.value) {
+			e.preventDefault();
+			builder.deleteChoice(reqNodeId, qIndex, index);
+			await tick();
+			const inputs = listEl?.querySelectorAll<HTMLInputElement>('.choice-value-input');
+			if (inputs && inputs.length > 0) {
+				inputs[Math.min(index, inputs.length - 1)]?.focus();
+			}
+		}
+	}
 </script>
 
-<div class="space-y-1.5">
+<div class="space-y-1.5" bind:this={listEl}>
 	<div class="flex items-center justify-between">
 		<span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Choices</span>
 		<button
@@ -57,7 +82,8 @@
 				? 'opacity-50'
 				: ''}"
 			draggable="true"
-			ondragstart={() => drag.handleDragStart(index)}
+			onmousedown={drag.recordMousedown}
+			ondragstart={(e) => drag.handleDragStart(e, index)}
 			ondragover={drag.handleDragOver}
 			ondrop={(e) => drag.handleDrop(e, index)}
 			ondragend={drag.handleDragEnd}
@@ -65,7 +91,11 @@
 		>
 			<!-- Collapsed row -->
 			<div class="flex items-center gap-2 px-3 py-2">
-				<span class="cursor-grab text-gray-300 hover:text-gray-500">
+				<span
+					class="cursor-grab text-gray-300 hover:text-gray-500"
+					data-drag-handle
+					aria-hidden="true"
+				>
 					<i class="fa-solid fa-grip-vertical text-xs"></i>
 				</span>
 
@@ -98,8 +128,9 @@
 						type="text"
 						value={choice.value ?? ''}
 						placeholder="Choice text..."
-						class="flex-1 bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-blue-500 px-1 py-0.5 text-sm outline-none transition-colors"
+						class="choice-value-input flex-1 bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-blue-500 px-1 py-0.5 text-sm text-gray-900 outline-none transition-colors"
 						onblur={(e) => saveField(choice.id, 'value', e.currentTarget.value)}
+						onkeydown={(e) => handleChoiceKeydown(e, choice, index)}
 					/>
 				{/if}
 

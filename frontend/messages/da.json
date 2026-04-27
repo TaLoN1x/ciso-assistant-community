@@ -734,6 +734,7 @@
 	"requirementMappings": "Kravkortlægninger",
 	"sourceFramework": "Kilde-rammeværk",
 	"targetFramework": "Mål-rammeværk",
+	"targetFrameworks": "Mål-rammeværker",
 	"baseline": "Baseline",
 	"createAuditFromBaseline": "Opret revision fra baseline",
 	"coverageColon": "Dækning:",
@@ -1223,6 +1224,7 @@
 	"securityExceptions": "Undtagelser",
 	"addSecurityException": "Tilføj undtagelse",
 	"expirationDate": "Udløbsdato",
+	"expirationDateIsInThePastWarning": "Den angivne udløbsdato ligger i fortiden",
 	"filterBy": "Filtrér efter",
 	"demoDataAlreadyImported": "Demodata er allerede importeret. Slet eller omdøb dit eksisterende DEMO-domæne.",
 	"finding": "Fund",
@@ -1424,5 +1426,6 @@
 	"confirmModalMessagePlural": "Er du sikker? Denne handling vil permanent påvirke følgende objekter",
 	"syncAppliedControlsMessage": "De anvendte kontroller, der bruger denne referencekontrol, vil blive synkroniseret med den. Bemærk venligst, at dette ikke kan fortrydes.",
 	"syncToAppliedControl": "Synkroniser med anvendt kontrol",
-	"syncToReferenceControl": "Synkroniser med referencekontrol"
+	"syncToReferenceControl": "Synkroniser med referencekontrol",
+	"exportEcosystem": "økosystem-eksport (XLSX)"
 }

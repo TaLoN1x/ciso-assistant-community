@@ -695,6 +695,7 @@
 	"requirementMappings": "Mappings de requisitos",
 	"sourceFramework": "Marco de trabajo",
 	"targetFramework": "Marco de destino",
+	"targetFrameworks": "Marcos de destino",
 	"baseline": "Base",
 	"createAuditFromBaseline": "Crear auditoría desde una base",
 	"coverageColon": "Cobertura:",
@@ -1801,6 +1802,7 @@
 	"expectedLossUpperBoundCurrency": "Límite Superior de Pérdida Esperada ({currency})",
 	"experimentalFeatures": "Funciones experimentales",
 	"expirationDate": "Fecha de vencimiento",
+	"expirationDateIsInThePastWarning": "La fecha de vencimiento introducida está en el pasado",
 	"expiresOn": "Vence el {date}",
 	"expiry": "Vencimiento",
 	"exportPdf": "Exportar PDF",
@@ -3166,5 +3168,6 @@
 	"confirmModalMessagePlural": "¿Estás seguro? Esta acción afectará permanentemente a los siguientes objetos",
 	"syncAppliedControlsMessage": "Los controles aplicados que utilizan este control de referencia se sincronizarán con él. Tenga en cuenta que esto no se puede deshacer.",
 	"syncToAppliedControl": "Sincronizar con el control aplicado",
-	"syncToReferenceControl": "Sincronizar con el control de referencia"
+	"syncToReferenceControl": "Sincronizar con el control de referencia",
+	"exportEcosystem": "exportación de ecosistema (XLSX)"
 }

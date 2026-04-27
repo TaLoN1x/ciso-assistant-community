@@ -251,12 +251,23 @@
 					/>
 					<AutocompleteSelect
 						multiple
+						lazy
 						form={_form}
 						optionsEndpoint="vulnerabilities"
 						optionsDetailedUrlParameters={[['scope_folder_id', page.data.scenario.folder.id]]}
 						optionsExtraFields={[['folder', 'str']]}
 						field="vulnerabilities"
 						label={m.vulnerabilities()}
+					/>
+					<AutocompleteSelect
+						multiple
+						lazy
+						form={_form}
+						optionsEndpoint="incidents"
+						optionsLabelField="auto"
+						optionsExtraFields={[['folder', 'str']]}
+						field="incidents"
+						label={m.incidents()}
 					/>
 					<AutocompleteSelect
 						multiple

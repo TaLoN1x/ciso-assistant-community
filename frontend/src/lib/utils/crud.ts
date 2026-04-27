@@ -275,6 +275,64 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'filtering_labels', urlModel: 'filtering-labels' }
 		]
 	},
+	'security-advisories': {
+		name: 'securityadvisory',
+		localName: 'securityAdvisory',
+		localNamePlural: 'securityAdvisories',
+		verboseName: 'Security advisory',
+		verboseNamePlural: 'Security advisories',
+		foreignKeyFields: [
+			{ field: 'folder', urlModel: 'folders', urlParams: 'content_type=DO&content_type=GL' },
+			{ field: 'library', urlModel: 'loaded-libraries' },
+			{ field: 'filtering_labels', urlModel: 'filtering-labels' }
+		],
+		detailViewFields: [
+			{ field: 'ref_id' },
+			{ field: 'name' },
+			{ field: 'source' },
+			{ field: 'aliases' },
+			{ field: 'description' },
+			{ field: 'cvss_base_score' },
+			{ field: 'cvss_vector' },
+			{ field: 'epss_score' },
+			{ field: 'epss_percentile' },
+			{ field: 'is_actively_exploited' },
+			{ field: 'exploited_date_added', type: 'date' },
+			{ field: 'published_date', type: 'date' },
+			{ field: 'references' },
+			{ field: 'provider' },
+			{ field: 'folder' },
+			{ field: 'filtering_labels', urlModel: 'filtering-labels' }
+		],
+		reverseForeignKeyFields: [
+			{
+				field: 'security_advisories',
+				urlModel: 'vulnerabilities',
+				disableCreate: true,
+				disableDelete: true
+			}
+		]
+	},
+	cwes: {
+		name: 'cwe',
+		localName: 'cwe',
+		localNamePlural: 'cwes',
+		verboseName: 'CWE',
+		verboseNamePlural: 'CWEs',
+		foreignKeyFields: [
+			{ field: 'folder', urlModel: 'folders', urlParams: 'content_type=DO&content_type=GL' },
+			{ field: 'library', urlModel: 'loaded-libraries' },
+			{ field: 'filtering_labels', urlModel: 'filtering-labels' }
+		],
+		reverseForeignKeyFields: [
+			{
+				field: 'cwes',
+				urlModel: 'vulnerabilities',
+				disableCreate: true,
+				disableDelete: true
+			}
+		]
+	},
 	'risk-scenarios': {
 		name: 'riskscenario',
 		localName: 'riskScenario',
@@ -291,6 +349,7 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'risk_assessment', urlModel: 'risk-assessments' },
 			{ field: 'assets', urlModel: 'assets' },
 			{ field: 'vulnerabilities', urlModel: 'vulnerabilities' },
+			{ field: 'incidents', urlModel: 'incidents' },
 			{ field: 'applied_controls', urlModel: 'applied-controls' },
 			{ field: 'existing_applied_controls', urlModel: 'applied-controls' },
 			{ field: 'perimeter', urlModel: 'perimeters' },
@@ -386,6 +445,12 @@ export const URL_MODEL_MAP: ModelMap = {
 				urlModel: 'assets',
 				disableDelete: true,
 				disableCreate: true
+			},
+			{
+				field: 'applied_controls',
+				urlModel: 'incidents',
+				disableCreate: true,
+				disableDelete: true
 			}
 		],
 		selectFields: [
@@ -507,10 +572,20 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'assets', urlModel: 'assets' },
 			{ field: 'applied_controls', urlModel: 'applied-controls' },
 			{ field: 'filtering_labels', urlModel: 'filtering-labels' },
-			{ field: 'security_exceptions', urlModel: 'security-exceptions' }
+			{ field: 'security_exceptions', urlModel: 'security-exceptions' },
+			{ field: 'security_advisories', urlModel: 'security-advisories' },
+			{ field: 'cwes', urlModel: 'cwes' },
+			{ field: 'detected_at', type: 'date' },
+			{ field: 'eta', type: 'date' },
+			{ field: 'due_date', type: 'date' }
 		],
 		selectFields: [{ field: 'severity', valueType: 'number' }, { field: 'status' }],
-		filters: [{ field: 'folder' }, { field: 'filtering_labels' }],
+		filters: [
+			{ field: 'folder' },
+			{ field: 'filtering_labels' },
+			{ field: 'security_advisories' },
+			{ field: 'cwes' }
+		],
 		reverseForeignKeyFields: [
 			{
 				field: 'vulnerabilities',
@@ -521,6 +596,12 @@ export const URL_MODEL_MAP: ModelMap = {
 			{
 				field: 'vulnerabilities',
 				urlModel: 'risk-scenarios',
+				disableCreate: true,
+				disableDelete: true
+			},
+			{
+				field: 'vulnerabilities',
+				urlModel: 'findings',
 				disableCreate: true,
 				disableDelete: true
 			}
@@ -1003,6 +1084,20 @@ export const URL_MODEL_MAP: ModelMap = {
 		verboseName: 'Feature flag',
 		verboseNamePlural: 'Feature flags'
 	},
+	'vulnerability-sla': {
+		name: 'vulnerabilitySla',
+		localName: 'vulnerabilitySla',
+		localNamePlural: 'vulnerabilitySla',
+		verboseName: 'Vulnerability SLA',
+		verboseNamePlural: 'Vulnerability SLA'
+	},
+	'sec-intel-feeds': {
+		name: 'secIntelFeeds',
+		localName: 'secIntelFeeds',
+		localNamePlural: 'secIntelFeeds',
+		verboseName: 'Vulnerability Feeds',
+		verboseNamePlural: 'Vulnerability Feeds'
+	},
 	'requirement-mapping-sets': {
 		name: 'requirementmappingset',
 		localName: 'requirementMappingSet',
@@ -1105,6 +1200,34 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'dora_reintegration_possibility' },
 			{ field: 'dora_discontinuing_impact' },
 			{ field: 'dora_alternative_providers_identified' }
+		],
+		detailViewFields: [
+			{ field: 'id' },
+			{ field: 'name' },
+			{ field: 'ref_id' },
+			{ field: 'description' },
+			{ field: 'provider_entity' },
+			{ field: 'recipient_entity' },
+			{ field: 'is_active' },
+			{ field: 'criticality' },
+			{ field: 'owner' },
+			{ field: 'assets' },
+			{ field: 'dora_ict_service_type' },
+			{ field: 'storage_of_data' },
+			{ field: 'data_location_storage' },
+			{ field: 'data_location_processing' },
+			{ field: 'dora_data_sensitiveness' },
+			{ field: 'dora_reliance_level' },
+			{ field: 'dora_substitutability' },
+			{ field: 'dora_non_substitutability_reason' },
+			{ field: 'dora_has_exit_plan' },
+			{ field: 'dora_reintegration_possibility' },
+			{ field: 'dora_discontinuing_impact' },
+			{ field: 'dora_alternative_providers_identified' },
+			{ field: 'dora_alternative_providers' },
+			{ field: 'created_at', type: 'datetime' },
+			{ field: 'updated_at', type: 'datetime' },
+			{ field: 'filtering_labels' }
 		],
 		filters: [{ field: 'owner' }, { field: 'filtering_labels' }]
 	},
@@ -2000,11 +2123,38 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'owners', urlModel: 'actors', urlParams: 'is_third_party=false' },
 			{ field: 'qualifications', urlModel: 'terminologies' },
 			{ field: 'entities', urlModel: 'entities' },
+			{ field: 'applied_controls', urlModel: 'applied-controls' },
+			{ field: 'task_templates', urlModel: 'task-templates' },
 			{ field: 'filtering_labels', urlModel: 'filtering-labels' }
 		],
 		reverseForeignKeyFields: [
 			{ field: 'incident', urlModel: 'timeline-entries' },
-			{ field: 'incident', urlModel: 'dora-incident-reports' }
+			{ field: 'incident', urlModel: 'dora-incident-reports' },
+			{
+				field: 'incidents',
+				urlModel: 'applied-controls',
+				disableCreate: true,
+				disableDelete: true,
+				addExisting: {
+					parentField: 'applied_controls',
+					lazy: true
+				}
+			},
+			{
+				field: 'incidents',
+				urlModel: 'task-templates',
+				disableCreate: true,
+				disableDelete: true,
+				addExisting: {
+					parentField: 'task_templates'
+				}
+			},
+			{
+				field: 'incidents',
+				urlModel: 'risk-scenarios',
+				disableCreate: true,
+				disableDelete: true
+			}
 		],
 		selectFields: [
 			{ field: 'severity', valueType: 'number' },
@@ -2029,6 +2179,9 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'resolved_at' },
 			{ field: 'resolution' },
 			{ field: 'is_bcp_activated' },
+			{ field: 'applied_controls' },
+			{ field: 'task_templates' },
+			{ field: 'risk_scenarios' },
 			{ field: 'created_at' },
 			{ field: 'updated_at' },
 			{ field: 'link' },
@@ -2076,6 +2229,12 @@ export const URL_MODEL_MAP: ModelMap = {
 				defaultFilters: {
 					status: [{ value: 'pending' }, { value: 'in_progress' }]
 				}
+			},
+			{
+				field: 'task_templates',
+				urlModel: 'incidents',
+				disableCreate: true,
+				disableDelete: true
 			}
 		]
 	},
@@ -2758,7 +2917,8 @@ export const FIELD_COLORED_TAG_MAP: FieldColoredTagMap = {
 					mitigate: { text: 'mitigate', cssClasses: 'badge bg-lime-200' },
 					accept: { text: 'accept', cssClasses: 'badge bg-green-200' },
 					avoid: { text: 'avoid', cssClasses: 'badge bg-red-200' },
-					transfer: { text: 'transfer', cssClasses: 'badge bg-yellow-300' }
+					transfer: { text: 'transfer', cssClasses: 'badge bg-yellow-300' },
+					cancelled: { text: 'cancelled', cssClasses: 'badge bg-gray-300' }
 				}
 			}
 		}

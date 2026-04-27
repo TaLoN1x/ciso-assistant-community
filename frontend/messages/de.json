@@ -695,6 +695,7 @@
 	"requirementMappings": "Anforderungszuordnungen",
 	"sourceFramework": "Quellreferenzwerk",
 	"targetFramework": "Zielreferenzwerk",
+	"targetFrameworks": "Zielreferenzwerke",
 	"baseline": "Baseline",
 	"createAuditFromBaseline": "Audit aus Baseline erstellen",
 	"coverageColon": "Abdeckung:",
@@ -1802,6 +1803,7 @@
 	"expectedLossUpperBoundCurrency": "Erwarteter Verlust Obergrenze ({currency})",
 	"experimentalFeatures": "Experimentelle Funktionen",
 	"expirationDate": "Ablaufdatum",
+	"expirationDateIsInThePastWarning": "Das eingegebene Ablaufdatum liegt in der Vergangenheit",
 	"expiresOn": "Läuft ab am {date}",
 	"expiry": "Ablauf",
 	"exportPdf": "PDF exportieren",
@@ -3025,5 +3027,6 @@
 	"confirmModalMessagePlural": "Sind Sie sicher? Diese Aktion wirkt sich dauerhaft auf folgende Objekte aus",
 	"syncAppliedControlsMessage": "Die angewendeten Kontrollen, die diese Referenzkontrolle verwenden, werden mit ihr synchronisiert. Bitte beachten Sie, dass dies nicht rückgängig gemacht werden kann.",
 	"syncToAppliedControl": "Mit angewendeter Maßnahme synchronisieren",
-	"syncToReferenceControl": "Mit Referenzkontrolle synchronisieren"
+	"syncToReferenceControl": "Mit Referenzkontrolle synchronisieren",
+	"exportEcosystem": "Ökosystem-Export (XLSX)"
 }

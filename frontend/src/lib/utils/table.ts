@@ -12,7 +12,10 @@ import TaskNodeChangeStatus from '$lib/components/ContextMenu/task-nodes/ChangeS
 import { getModelInfo } from './crud';
 import SelectObject from '$lib/components/ContextMenu/ebios-rm/SelectObject.svelte';
 import ChangePriority from '$lib/components/ContextMenu/applied-controls/ChangePriority.svelte';
+import ReplaceWith from '$lib/components/ContextMenu/applied-controls/ReplaceWith.svelte';
 import ChangeAttackStage from '$lib/components/ContextMenu/elementary-actions/ChangeAttackStage.svelte';
+import VulnerabilityChangeStatus from '$lib/components/ContextMenu/vulnerabilities/ChangeStatus.svelte';
+import VulnerabilityChangeSeverity from '$lib/components/ContextMenu/vulnerabilities/ChangeSeverity.svelte';
 
 export function tableSourceMapper(source: any[], keys: string[]): any[] {
 	return source.map((row) => {
@@ -1246,6 +1249,24 @@ export const VULNERABILITY_SEVERITY_FILTER: ListViewFilterConfig = {
 	}
 };
 
+export const SECURITY_ADVISORY_FILTER: ListViewFilterConfig = {
+	component: AutocompleteSelect,
+	props: {
+		optionsEndpoint: 'security-advisories',
+		label: 'securityAdvisory',
+		multiple: true
+	}
+};
+
+export const CWE_FILTER: ListViewFilterConfig = {
+	component: AutocompleteSelect,
+	props: {
+		optionsEndpoint: 'cwes',
+		label: 'cwe',
+		multiple: true
+	}
+};
+
 export const listViewFields = {
 	folders: {
 		head: ['name', 'description', 'contentType', 'parentDomain', 'iamGroups', 'labels'],
@@ -1295,12 +1316,24 @@ export const listViewFields = {
 		}
 	},
 	vulnerabilities: {
-		head: ['ref_id', 'name', 'status', 'severity', 'applied_controls', 'folder', 'labels'],
+		head: [
+			'ref_id',
+			'name',
+			'status',
+			'severity',
+			'sla',
+			'dueDate',
+			'applied_controls',
+			'folder',
+			'labels'
+		],
 		body: [
 			'ref_id',
 			'name',
 			'status',
 			'severity',
+			'state',
+			'due_date',
 			'applied_controls',
 			'folder',
 			'filtering_labels'
@@ -1309,7 +1342,10 @@ export const listViewFields = {
 			folder: DOMAIN_FILTER,
 			filtering_labels: LABELS_FILTER,
 			status: VULNERABILITY_STATUS_FILTER,
-			severity: VULNERABILITY_SEVERITY_FILTER
+			severity: VULNERABILITY_SEVERITY_FILTER,
+			assets: ASSET_FILTER,
+			security_advisories: SECURITY_ADVISORY_FILTER,
+			cwes: CWE_FILTER
 		}
 	},
 	'risk-assessments': {
@@ -1350,6 +1386,57 @@ export const listViewFields = {
 				props: { ...PROVIDER_FILTER.props, optionsEndpoint: 'threats/provider' }
 			},
 			library: LIBRARY_FILTER,
+			filtering_labels: LABELS_FILTER
+		}
+	},
+	'security-advisories': {
+		head: [
+			'ref_id',
+			'name',
+			'source',
+			'description',
+			'cvssBaseScore',
+			'epssScore',
+			'isActivelyExploited',
+			'publishedDate',
+			'domain',
+			'labels'
+		],
+		body: [
+			'ref_id',
+			'name',
+			'source',
+			'description',
+			'cvss_base_score',
+			'epss_score',
+			'is_actively_exploited',
+			'published_date',
+			'folder',
+			'filtering_labels'
+		],
+		meta: ['id', 'urn'],
+		filters: {
+			folder: DOMAIN_FILTER,
+			source: {
+				component: AutocompleteSelect,
+				props: {
+					optionsEndpoint: 'security-advisories/source',
+					optionsLabelField: 'label',
+					optionsValueField: 'value',
+					label: 'source',
+					browserCache: 'force-cache',
+					multiple: true
+				}
+			},
+			filtering_labels: LABELS_FILTER
+		}
+	},
+	cwes: {
+		head: ['ref_id', 'name', 'description', 'library', 'domain', 'labels'],
+		body: ['ref_id', 'name', 'description', 'library', 'folder', 'filtering_labels'],
+		meta: ['id', 'urn'],
+		filters: {
+			folder: DOMAIN_FILTER,
 			filtering_labels: LABELS_FILTER
 		}
 	},
@@ -2327,6 +2414,7 @@ export const listViewFields = {
 		head: [
 			'ref_id',
 			'name',
+			'description',
 			'findings_assessment',
 			'severity',
 			'priority',
@@ -2338,6 +2426,7 @@ export const listViewFields = {
 		body: [
 			'ref_id',
 			'name',
+			'description',
 			'findings_assessment',
 			'severity',
 			'priority',
@@ -2826,7 +2915,8 @@ export const contextMenuActions = {
 		{ component: ChangeImpact, props: {} },
 		{ component: ChangeEffort, props: {} },
 		{ component: ChangePriority, props: {} },
-		{ component: ChangeCsfFunction, props: {} }
+		{ component: ChangeCsfFunction, props: {} },
+		{ component: ReplaceWith, props: {} }
 	],
 	evidences: [{ component: EvidenceChangeStatus, props: {} }],
 	'task-nodes': [{ component: TaskNodeChangeStatus, props: {} }],
@@ -2835,7 +2925,11 @@ export const contextMenuActions = {
 	stakeholders: [{ component: SelectObject, props: {} }],
 	'attack-paths': [{ component: SelectObject, props: {} }],
 	'operational-scenarios': [{ component: SelectObject, props: {} }],
-	'elementary-actions': [{ component: ChangeAttackStage, props: {} }]
+	'elementary-actions': [{ component: ChangeAttackStage, props: {} }],
+	vulnerabilities: [
+		{ component: VulnerabilityChangeStatus, props: {} },
+		{ component: VulnerabilityChangeSeverity, props: {} }
+	]
 };
 
 // Batch action configuration
@@ -2847,37 +2941,47 @@ export interface BatchActionConfig {
 		| 'add_m2m'
 		| 'remove_m2m'
 		| 'change_folder'
-		| 'group';
+		| 'group'
+		| 'merge';
 	label: string;
 	icon: string;
 	field?: string;
 	optionsEndpoint?: string;
 	multiSelect?: boolean;
 	children?: BatchActionConfig[];
+	minSelection?: number;
+	maxSelection?: number;
 }
 
 export const batchActions: Partial<Record<urlModel, BatchActionConfig[]>> = {
 	'applied-controls': [
 		{
-			type: 'change_field',
-			label: 'changeStatus',
-			icon: 'fa-solid fa-arrow-right-arrow-left',
-			field: 'status',
-			optionsEndpoint: 'applied-controls/status'
-		},
-		{
-			type: 'change_field',
-			label: 'batchChangePriority',
-			icon: 'fa-solid fa-arrow-up-wide-short',
-			field: 'priority',
-			optionsEndpoint: 'applied-controls/priority'
-		},
-		{
-			type: 'change_field',
-			label: 'changeCsfFunction',
-			icon: 'fa-solid fa-shield-halved',
-			field: 'csf_function',
-			optionsEndpoint: 'applied-controls/csf_function'
+			type: 'group',
+			label: 'changeAttributes',
+			icon: 'fa-solid fa-sliders',
+			children: [
+				{
+					type: 'change_field',
+					label: 'changeStatus',
+					icon: 'fa-solid fa-arrow-right-arrow-left',
+					field: 'status',
+					optionsEndpoint: 'applied-controls/status'
+				},
+				{
+					type: 'change_field',
+					label: 'batchChangePriority',
+					icon: 'fa-solid fa-arrow-up-wide-short',
+					field: 'priority',
+					optionsEndpoint: 'applied-controls/priority'
+				},
+				{
+					type: 'change_field',
+					label: 'changeCsfFunction',
+					icon: 'fa-solid fa-shield-halved',
+					field: 'csf_function',
+					optionsEndpoint: 'applied-controls/csf_function'
+				}
+			]
 		},
 		{
 			type: 'change_m2m',
@@ -2916,6 +3020,13 @@ export const batchActions: Partial<Record<urlModel, BatchActionConfig[]>> = {
 			icon: 'fa-solid fa-folder',
 			optionsEndpoint: 'folders?content_type=DO&content_type=GL'
 		},
+		{
+			type: 'merge',
+			label: 'mergeControls',
+			icon: 'fa-solid fa-code-merge',
+			minSelection: 2,
+			maxSelection: 20
+		},
 		{ type: 'delete', label: 'delete', icon: 'fa-solid fa-trash' }
 	],
 	policies: [
@@ -2931,6 +3042,13 @@ export const batchActions: Partial<Record<urlModel, BatchActionConfig[]>> = {
 			label: 'changeDomain',
 			icon: 'fa-solid fa-folder',
 			optionsEndpoint: 'folders?content_type=DO&content_type=GL'
+		},
+		{
+			type: 'merge',
+			label: 'mergeControls',
+			icon: 'fa-solid fa-code-merge',
+			minSelection: 2,
+			maxSelection: 20
 		},
 		{ type: 'delete', label: 'delete', icon: 'fa-solid fa-trash' }
 	],
@@ -3187,6 +3305,31 @@ export const batchActions: Partial<Record<urlModel, BatchActionConfig[]>> = {
 			field: 'status',
 			optionsEndpoint: 'vulnerabilities/status'
 		},
+		{
+			type: 'change_field',
+			label: 'changeSeverity',
+			icon: 'fa-solid fa-arrow-up-wide-short',
+			field: 'severity',
+			optionsEndpoint: 'vulnerabilities/severity'
+		},
+		{
+			type: 'change_folder',
+			label: 'changeDomain',
+			icon: 'fa-solid fa-folder',
+			optionsEndpoint: 'folders?content_type=DO&content_type=GL'
+		},
+		{ type: 'delete', label: 'delete', icon: 'fa-solid fa-trash' }
+	],
+	'security-advisories': [
+		{
+			type: 'change_folder',
+			label: 'changeDomain',
+			icon: 'fa-solid fa-folder',
+			optionsEndpoint: 'folders?content_type=DO&content_type=GL'
+		},
+		{ type: 'delete', label: 'delete', icon: 'fa-solid fa-trash' }
+	],
+	cwes: [
 		{
 			type: 'change_folder',
 			label: 'changeDomain',
