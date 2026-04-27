@@ -180,7 +180,10 @@ export class PageDetail extends BasePage {
 			content: content,
 			progressRadial: this.page
 				.getByTestId('tree-item')
-				.filter({ has: content, hasNotText: path.length != 0 ? path.at(-1) : undefined })
+				.filter({
+					has: content,
+					hasNotText: path.length != 0 ? flexibleMatch(path.at(-1) as string) : undefined
+				})
 				.getByTestId('tree-item-lead')
 				.getByTestId('progress-ring-svg'),
 			default: this.page
