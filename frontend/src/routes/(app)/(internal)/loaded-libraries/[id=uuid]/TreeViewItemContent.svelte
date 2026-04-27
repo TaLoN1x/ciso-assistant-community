@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { getRequirementTitle } from '$lib/utils/helpers';
 	import { getOptions } from '$lib/utils/crud';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+	import RequirementLabel from '$lib/components/RequirementLabel.svelte';
 
 	interface Props {
 		ref_id: string;
@@ -56,7 +56,7 @@
 
 	const assessableNodes = getAssessableNodes(node);
 
-	const title: string = getRequirementTitle(ref_id, name);
+	const hasTitle = !!(ref_id || name);
 
 	let showInfo = $state(false);
 
@@ -67,9 +67,9 @@
 <div>
 	<span class="whitespace-pre-line" style="font-weight: 300;">
 		<span class="max-w-[80ch]">
-			{#if title || description}
-				{#if title}
-					<span style="font-weight: 600;">{title}</span>
+			{#if hasTitle || description}
+				{#if hasTitle}
+					<RequirementLabel {ref_id} {name} bold />
 				{/if}
 				{#if description}
 					<MarkdownRenderer content={description} />

@@ -14,6 +14,7 @@
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import SplashCard from '$lib/components/FrameworkBuilder/SplashCard.svelte';
 	import Question from '$lib/components/Forms/Question.svelte';
+	import RequirementLabel from '$lib/components/RequirementLabel.svelte';
 
 	interface Props {
 		data: PageData;
@@ -275,8 +276,10 @@
 				{@const hasQuestions = Object.keys(questionsDict).length > 0}
 				<div class="card bg-white shadow-md border-t-[3px] border-t-orange-400 px-6 py-5 space-y-4">
 					<h3 class="text-xl font-semibold text-orange-600">
-						{node.ref_id ? `${node.ref_id} - ` : ''}{t(node.translations, 'name', node.name) ||
-							'Untitled'}
+						<RequirementLabel
+							ref_id={node.ref_id}
+							name={t(node.translations, 'name', node.name) || 'Untitled'}
+						/>
 					</h3>
 					{#if node.description}
 						<div class="card w-full font-light text-lg p-4 preset-tonal-primary">

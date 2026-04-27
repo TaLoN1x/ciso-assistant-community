@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { complianceResultColorMap, complianceStatusColorMap } from '$lib/utils/constants';
-	import { darkenColor, joinRefIdName } from '$lib/utils/helpers';
+	import { darkenColor } from '$lib/utils/helpers';
+	import RequirementLabel from '$lib/components/RequirementLabel.svelte';
 	import type { ReferenceControlSchema, ThreatSchema } from '$lib/utils/schemas';
 	import { Progress } from '@skeletonlabs/skeleton-svelte';
 	import { displayScoreColor, formatScoreValue } from '$lib/utils/helpers';
@@ -72,7 +73,7 @@
 
 	type TreeViewItemNode = typeof node;
 
-	const title: string = joinRefIdName(ref_id, name);
+	const hasTitle = !!(ref_id || name);
 
 	let showInfo = $state(false);
 
@@ -204,9 +205,9 @@
 									breadcrumbAction="push"
 									href="/requirement-assessments/{ra_id}/edit?next={page.url.pathname}"
 								>
-									{#if title || description}
-										{#if title}
-											<span style="font-weight: 600;">{title}</span>
+									{#if hasTitle || description}
+										{#if hasTitle}
+											<RequirementLabel {ref_id} {name} bold />
 										{/if}
 										{#if description}
 											<MarkdownRenderer content={description} />
@@ -221,8 +222,8 @@
 									breadcrumbAction="push"
 									href="/requirement-assessments/{ra_id}?next={page.url.pathname}"
 								>
-									{#if title}
-										<span style="font-weight: 600;">{title}</span>
+									{#if hasTitle}
+										<RequirementLabel {ref_id} {name} bold />
 									{/if}
 									{#if description}
 										<MarkdownRenderer content={description} />
@@ -232,8 +233,8 @@
 						</span>
 					{:else}
 						<p class="max-w-[80ch] whitespace-pre-line">
-							{#if title}
-								<span style="font-weight: 600;">{title}</span>
+							{#if hasTitle}
+								<RequirementLabel {ref_id} {name} bold />
 							{/if}
 							{#if description}
 								<MarkdownRenderer content={description} />

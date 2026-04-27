@@ -10,6 +10,7 @@
 	import ModelTable from '$lib/components/ModelTable/ModelTable.svelte';
 	import { isDark } from '$lib/utils/helpers';
 	import Anchor from '$lib/components/Anchor/Anchor.svelte';
+	import RequirementLabel from '$lib/components/RequirementLabel.svelte';
 
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 
@@ -336,7 +337,7 @@
 					{#each data.scenario.antecedent_scenarios as antecedent}
 						<li>
 							<Anchor class="anchor text-sm font-semibold" href="/risk-scenarios/{antecedent.id}">
-								{antecedent.ref_id ? `${antecedent.ref_id} - ` : ''}{antecedent.name}
+								<RequirementLabel ref_id={antecedent.ref_id} name={antecedent.name} />
 							</Anchor>
 						</li>
 					{/each}
