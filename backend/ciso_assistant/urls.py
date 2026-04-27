@@ -20,6 +20,8 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
+from core.views import metrics_view
+from django.conf import settings
 
 # beware of the order of url patterns, this can change de behavior in case of multiple matches and avoid giving identical paths that could cause conflicts
 urlpatterns = [
@@ -40,3 +42,7 @@ urlpatterns = [
     path("serdes/", include("serdes.urls")),
     path("i18n/", include("django.conf.urls.i18n")),
 ]
+
+if settings.METRICS_ENDPOINT_MODE:
+    from core.views import metrics_view
+    urlpatterns.append(path("metrics/", metrics_view, name="metrics"))
