@@ -150,22 +150,32 @@ export class PageDetail extends BasePage {
 	}
 
 	async treeViewItem(value: string, path: string[] = []) {
+		// `ref_id - name` is rendered as `<chip>ref_id</chip> name` (no dash text),
+		// while older tree items still render with a literal " - " separator.
+		// Build a regex that accepts either form so test data ("ID - Identify") matches both.
+		const flexibleMatch = (text: string): RegExp => {
+			const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ - /g, '\\s*-?\\s*');
+			return new RegExp(escaped);
+		};
 		if (path.length !== 0) {
 			const tree = [...path, value];
 			for (let i = 0; i < tree.length - 1; i++) {
 				if (
 					await this.page
 						.getByTestId('tree-item-content')
-						.getByText(tree[i + 1])
+						.getByText(flexibleMatch(tree[i + 1]))
 						.isHidden()
 				) {
-					await this.page.getByTestId('tree-item-content').getByText(tree[i]).click();
+					await this.page
+						.getByTestId('tree-item-content')
+						.getByText(flexibleMatch(tree[i]))
+						.click();
 				}
 			}
 		}
 		const content = this.page
 			.getByTestId('tree-item-content')
-			.filter({ hasText: new RegExp(`^${value}\n*.*`) });
+			.filter({ hasText: new RegExp(`^${value.replace(/ - /g, '\\s*-?\\s*')}\n*.*`) });
 		return {
 			content: content,
 			progressRadial: this.page
@@ -173,7 +183,9 @@ export class PageDetail extends BasePage {
 				.filter({ has: content, hasNotText: path.length != 0 ? path.at(-1) : undefined })
 				.getByTestId('tree-item-lead')
 				.getByTestId('progress-ring-svg'),
-			default: this.page.getByTestId('tree-item').filter({ hasText: new RegExp(`^${value}\n*.*`) })
+			default: this.page
+				.getByTestId('tree-item')
+				.filter({ hasText: new RegExp(`^${value.replace(/ - /g, '\\s*-?\\s*')}\n*.*`) })
 		};
 	}
 }
