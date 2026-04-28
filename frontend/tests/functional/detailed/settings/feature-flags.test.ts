@@ -5,27 +5,49 @@ const vars = TestContent.generateTestVars();
 
 const sidebar = (page: Page) => page.getByTestId('sidebar');
 
+/**
+ * Navigate to /settings and open the Feature Flags tab.
+ * Supports both:
+ *   - skeleton v4 (community): Tabs.Trigger renders data-value="featureFlags"
+ *   - skeleton v2 (enterprise): <Tab name="featureFlags" value={2}>
+ */
 const gotoFeatureFlags = async (page: Page) => {
 	await page.goto('/settings');
 	await page.waitForLoadState('networkidle');
 
-	const tab = page.locator('[data-value="featureFlags"]');
-	await expect(tab).toBeVisible();
-	await expect(tab).not.toHaveAttribute('data-ssr');
+	// Detect skeleton version: v4 uses data-value, v2 uses name attribute on radio input
+	const tabV4 = page.locator('[data-value="featureFlags"]');
+	const isV4 = (await tabV4.count()) > 0;
 
-	await tab.click();
-	await page.waitForTimeout(500);
-
-	await expect(
-		page.locator('[id$="content-featureFlags"] [role="checkbox"]').first()
-	).toBeVisible();
+	if (isV4) {
+		// skeleton v4 (community): wait for SSR hydration then click
+		await expect(tabV4).toBeVisible();
+		await expect(tabV4).not.toHaveAttribute('data-ssr');
+		await tabV4.click();
+		await page.waitForTimeout(500);
+		await expect(
+			page.locator('[id$="content-featureFlags"] [role="checkbox"]').first()
+		).toBeVisible();
+	} else {
+		// skeleton v2 (enterprise): Tab is a radio input — click it directly
+		const tabV2 = page.locator('[name="featureFlags"]');
+		await expect(tabV2).toBeVisible();
+		await tabV2.click();
+		await page.waitForTimeout(300);
+		await expect(page.locator('[role="checkbox"]').first()).toBeVisible();
+	}
 };
 
+/** Enable or disable a feature flag by its label, then save. */
 const setFlag = async (page: Page, flagLabel: string, enable: boolean) => {
 	await gotoFeatureFlags(page);
 
+	// Find checkbox card by label — works for both v4 (inside panel) and v2 (on page)
 	const panel = page.locator('[id$="content-featureFlags"]');
-	const card = panel
+	const panelExists = (await panel.count()) > 0;
+	const scope = panelExists ? panel : page;
+
+	const card = scope
 		.locator('[role="checkbox"]')
 		.filter({ has: page.locator('span.font-semibold', { hasText: flagLabel }) });
 
@@ -41,29 +63,40 @@ const setFlag = async (page: Page, flagLabel: string, enable: boolean) => {
 	}
 };
 
+// ---------------------------------------------------------------------------
+// Flag labels — exact span.font-semibold text in the EN UI
+// ---------------------------------------------------------------------------
 const FLAGS = {
+	// Operations
 	xrays: 'X-rays',
 	incidents: 'Incidents',
 	tasks: 'Tasks',
+	// Organization
 	objectivesIso: 'Objectives (ISO)',
 	issuesIso: 'Issues (ISO)',
+	// Governance
 	riskAcceptances: 'Risk acceptances',
 	exceptions: 'Exceptions',
 	followUp: 'Findings tracking',
+	// Risk
 	ebiosRm: 'Ebios RM',
 	scoringAssistant: 'Scoring assistant',
 	vulnerabilities: 'Vulnerabilities',
+	// Top-level modules
 	compliance: 'Compliance',
 	tprm: 'Third party',
+	// GDPR / Privacy
 	privacy: 'Privacy',
 	personalData: 'Personal Data',
 	purposes: 'Purposes',
 	rightRequests: 'Right Requests',
 	dataBreaches: 'Data Breaches',
+	// Extra
 	terminologies: 'Terminologies',
 	webhooks: 'Webhooks',
 	journeys: 'Journeys',
 	experimental: 'Experimental',
+	// Inherent Risk
 	inherentRisk: 'Inherent Risk'
 } as const;
 
@@ -119,6 +152,10 @@ const SIDEBAR_SECTION: Partial<Record<keyof typeof FLAGS, string | null>> = {
 	inherentRisk: null
 };
 
+/**
+ * Generic sidebar visibility test with try/finally to guarantee flag restoration
+ * even if an assertion fails mid-test.
+ */
 const testSidebarFlag = async (page: Page, flagKey: keyof typeof FLAGS) => {
 	const flagLabel = FLAGS[flagKey];
 	const sectionTestId = SIDEBAR_SECTION[flagKey];
@@ -142,13 +179,20 @@ const testSidebarFlag = async (page: Page, flagKey: keyof typeof FLAGS) => {
 		await openSection();
 		await expect(sidebar(page).getByTestId(itemTestId)).not.toBeVisible();
 	} finally {
+		// Always restore — prevents state leakage to subsequent tests
 		await setFlag(page, flagLabel, true);
 	}
 };
 
+// ---------------------------------------------------------------------------
+// Suite
+// ---------------------------------------------------------------------------
+
 test.describe.configure({ mode: 'serial' });
 
 test.describe('Feature flags', () => {
+	// ---------- Operations ----------
+
 	test('X-Rays visibility toggling', async ({ logedPage, page }) => {
 		await testSidebarFlag(page, 'xrays');
 	});
@@ -161,6 +205,8 @@ test.describe('Feature flags', () => {
 		await testSidebarFlag(page, 'tasks');
 	});
 
+	// ---------- Organization ----------
+
 	test('Objectives (ISO) visibility toggling', async ({ logedPage, page }) => {
 		await testSidebarFlag(page, 'objectivesIso');
 	});
@@ -168,6 +214,8 @@ test.describe('Feature flags', () => {
 	test('Issues (ISO) visibility toggling', async ({ logedPage, page }) => {
 		await testSidebarFlag(page, 'issuesIso');
 	});
+
+	// ---------- Governance ----------
 
 	test('Risk Acceptances visibility toggling', async ({ logedPage, page }) => {
 		await testSidebarFlag(page, 'riskAcceptances');
@@ -181,6 +229,8 @@ test.describe('Feature flags', () => {
 		await testSidebarFlag(page, 'followUp');
 	});
 
+	// ---------- Risk ----------
+
 	test('Ebios RM visibility toggling', async ({ logedPage, page }) => {
 		await testSidebarFlag(page, 'ebiosRm');
 	});
@@ -193,6 +243,8 @@ test.describe('Feature flags', () => {
 		await testSidebarFlag(page, 'vulnerabilities');
 	});
 
+	// ---------- Top-level modules ----------
+
 	test('Compliance visibility toggling', async ({ logedPage, page }) => {
 		await testSidebarFlag(page, 'compliance');
 	});
@@ -200,6 +252,8 @@ test.describe('Feature flags', () => {
 	test('Third Party visibility toggling', async ({ logedPage, page }) => {
 		await testSidebarFlag(page, 'tprm');
 	});
+
+	// ---------- GDPR / Privacy ----------
 
 	test('Privacy module visibility toggling', async ({ logedPage, page }) => {
 		await testSidebarFlag(page, 'privacy');
@@ -224,6 +278,8 @@ test.describe('Feature flags', () => {
 		await setFlag(page, FLAGS.privacy, true);
 		await testSidebarFlag(page, 'dataBreaches');
 	});
+
+	// ---------- Extra ----------
 
 	test('Terminologies visibility toggling', async ({ logedPage, page }) => {
 		await testSidebarFlag(page, 'terminologies');
@@ -269,6 +325,8 @@ test.describe('Feature flags', () => {
 	test('Experimental visibility toggling', async ({ logedPage, page }) => {
 		await testSidebarFlag(page, 'experimental');
 	});
+
+	// ---------- Inherent Risk (no sidebar item) ----------
 
 	test('Inherent Risk visibility on Risk Scenarios table view', async ({ logedPage, page }) => {
 		const risksPage = new PageContent(page, '/risk-scenarios', 'Risk Scenarios');
