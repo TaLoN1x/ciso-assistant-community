@@ -9,7 +9,7 @@ const gotoFeatureFlags = async (page: Page) => {
 	await page.goto('/settings');
 	await page.waitForLoadState('networkidle');
 
-	const tab = page.getByRole('tab', { name: /feature flags/i });
+	const tab = page.locator('[data-value="featureFlags"]');
 	await expect(tab).toBeVisible();
 	await expect(tab).not.toHaveAttribute('data-ssr');
 
@@ -120,6 +120,7 @@ const SIDEBAR_SECTION: Partial<Record<keyof typeof FLAGS, string | null>> = {
 };
 
 const testSidebarFlag = async (page: Page, flagKey: keyof typeof FLAGS) => {
+	const flagLabel = FLAGS[flagKey];
 	const sectionTestId = SIDEBAR_SECTION[flagKey];
 	const itemTestId = SIDEBAR_TESTID[flagKey];
 
@@ -132,15 +133,17 @@ const testSidebarFlag = async (page: Page, flagKey: keyof typeof FLAGS) => {
 		}
 	};
 
-	await setFlag(page, FLAGS[flagKey], true);
-	await openSection();
-	await expect(sidebar(page).getByTestId(itemTestId)).toBeVisible();
+	await setFlag(page, flagLabel, true);
+	try {
+		await openSection();
+		await expect(sidebar(page).getByTestId(itemTestId)).toBeVisible();
 
-	await setFlag(page, FLAGS[flagKey], false);
-	await openSection();
-	await expect(sidebar(page).getByTestId(itemTestId)).not.toBeVisible();
-
-	await setFlag(page, FLAGS[flagKey], true);
+		await setFlag(page, flagLabel, false);
+		await openSection();
+		await expect(sidebar(page).getByTestId(itemTestId)).not.toBeVisible();
+	} finally {
+		await setFlag(page, flagLabel, true);
+	}
 };
 
 test.describe.configure({ mode: 'serial' });
@@ -156,6 +159,14 @@ test.describe('Feature flags', () => {
 
 	test('Tasks visibility toggling', async ({ logedPage, page }) => {
 		await testSidebarFlag(page, 'tasks');
+	});
+
+	test('Objectives (ISO) visibility toggling', async ({ logedPage, page }) => {
+		await testSidebarFlag(page, 'objectivesIso');
+	});
+
+	test('Issues (ISO) visibility toggling', async ({ logedPage, page }) => {
+		await testSidebarFlag(page, 'issuesIso');
 	});
 
 	test('Risk Acceptances visibility toggling', async ({ logedPage, page }) => {
@@ -190,14 +201,6 @@ test.describe('Feature flags', () => {
 		await testSidebarFlag(page, 'tprm');
 	});
 
-	test('Objectives (ISO) visibility toggling', async ({ logedPage, page }) => {
-		await testSidebarFlag(page, 'objectivesIso');
-	});
-
-	test('Issues (ISO) visibility toggling', async ({ logedPage, page }) => {
-		await testSidebarFlag(page, 'issuesIso');
-	});
-
 	test('Privacy module visibility toggling', async ({ logedPage, page }) => {
 		await testSidebarFlag(page, 'privacy');
 	});
@@ -228,17 +231,18 @@ test.describe('Feature flags', () => {
 
 	test('Webhooks adds a tab in Settings', async ({ logedPage, page }) => {
 		await setFlag(page, FLAGS.webhooks, true);
-		await page.goto('/settings');
-		await page.waitForLoadState('networkidle');
-		const tab = page.getByRole('tab', { name: /webhook/i });
-		await expect(tab).toBeVisible();
+		try {
+			await page.goto('/settings');
+			await page.waitForLoadState('networkidle');
+			await expect(page.locator('[data-value="webhooks"]')).toBeVisible();
 
-		await setFlag(page, FLAGS.webhooks, false);
-		await page.goto('/settings');
-		await page.waitForLoadState('networkidle');
-		await expect(page.getByRole('tab', { name: /webhook/i })).not.toBeVisible();
-
-		await setFlag(page, FLAGS.webhooks, true);
+			await setFlag(page, FLAGS.webhooks, false);
+			await page.goto('/settings');
+			await page.waitForLoadState('networkidle');
+			await expect(page.locator('[data-value="webhooks"]')).not.toBeVisible();
+		} finally {
+			await setFlag(page, FLAGS.webhooks, true);
+		}
 	});
 
 	test('Journeys visibility toggling', async ({ logedPage, page }) => {
@@ -250,14 +254,16 @@ test.describe('Feature flags', () => {
 		};
 
 		await setFlag(page, FLAGS.journeys, true);
-		await openOverview();
-		await expect(sidebar(page).getByTestId('accordion-item-presets')).toBeVisible();
+		try {
+			await openOverview();
+			await expect(sidebar(page).getByTestId('accordion-item-presets')).toBeVisible();
 
-		await setFlag(page, FLAGS.journeys, false);
-		await openOverview();
-		await expect(sidebar(page).getByTestId('accordion-item-presets')).not.toBeVisible();
-
-		await setFlag(page, FLAGS.journeys, true);
+			await setFlag(page, FLAGS.journeys, false);
+			await openOverview();
+			await expect(sidebar(page).getByTestId('accordion-item-presets')).not.toBeVisible();
+		} finally {
+			await setFlag(page, FLAGS.journeys, true);
+		}
 	});
 
 	test('Experimental visibility toggling', async ({ logedPage, page }) => {
@@ -268,13 +274,15 @@ test.describe('Feature flags', () => {
 		const risksPage = new PageContent(page, '/risk-scenarios', 'Risk Scenarios');
 
 		await setFlag(page, FLAGS.inherentRisk, true);
-		await risksPage.goto();
-		await expect(page.getByText('Inherent Level', { exact: false })).toBeVisible();
+		try {
+			await risksPage.goto();
+			await expect(page.getByText('Inherent Level', { exact: false })).toBeVisible();
 
-		await setFlag(page, FLAGS.inherentRisk, false);
-		await risksPage.goto();
-		await expect(page.getByText('Inherent Level', { exact: false })).not.toBeVisible();
-
-		await setFlag(page, FLAGS.inherentRisk, true);
+			await setFlag(page, FLAGS.inherentRisk, false);
+			await risksPage.goto();
+			await expect(page.getByText('Inherent Level', { exact: false })).not.toBeVisible();
+		} finally {
+			await setFlag(page, FLAGS.inherentRisk, true);
+		}
 	});
 });
