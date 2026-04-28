@@ -9,7 +9,7 @@ const gotoFeatureFlags = async (page: Page) => {
 	await page.goto('/settings');
 	await page.waitForLoadState('networkidle');
 
-	const tab = page.getByRole('tab', { name: /feature.flag/i });
+	const tab = page.getByRole('tab', { name: /feature flags/i });
 	await expect(tab).toBeVisible();
 	await expect(tab).not.toHaveAttribute('data-ssr');
 
