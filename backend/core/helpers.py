@@ -56,6 +56,7 @@ STATUS_COLOR_MAP = {  # TODO: Move these kinds of color maps to frontend
     "avoid": "#ee6666",
     "on_hold": "#ee6666",
     "transfer": "#91cc75",
+    "cancelled": "#9ca3af",
 }
 
 
@@ -668,6 +669,7 @@ def risk_per_status(user: User):
         "accept": "#73c0de",
         "avoid": "#ee6666",
         "transfer": "#3ba272",
+        "cancelled": "#9ca3af",
     }
 
     (
@@ -769,9 +771,11 @@ def task_template_per_status(user: User):
     )
 
     # For non-recurrent templates, get the single node's status
-    single_node_subq = TaskNode.objects.filter(task_template=OuterRef("pk")).values(
-        "status"
-    )[:1]
+    single_node_subq = (
+        TaskNode.objects.filter(task_template=OuterRef("pk"))
+        .order_by("-due_date")
+        .values("status")[:1]
+    )
 
     non_recurrent_with_status = (
         viewable_task_templates.filter(is_recurrent=False)
@@ -1643,6 +1647,7 @@ def risk_status(user: User, risk_assessment_list):
         "accept": list(),
         "avoid": list(),
         "transfer": list(),
+        "cancelled": list(),
     }
     mtg_status_out = {
         "--": list(),
@@ -1768,10 +1773,10 @@ def compile_risk_assessment_for_composer(user, risk_assessment_list: list):
 
     untreated = RiskScenario.objects.filter(
         risk_assessment__in=risk_assessment_list
-    ).exclude(treatment__in=["mitigate", "accept"])
+    ).exclude(treatment__in=["mitigate", "accept", "cancelled"])
     untreated_h_vh = (
         RiskScenario.objects.filter(risk_assessment__in=risk_assessment_list)
-        .exclude(treatment__in=["mitigate", "accept"])
+        .exclude(treatment__in=["mitigate", "accept", "cancelled"])
         .filter(current_level__gte=2)
     )
     accepted = RiskScenario.objects.filter(
@@ -1988,10 +1993,13 @@ def handle(exc, context):
     # translate django validation error which ...
     # .. causes HTTP 500 status ==> DRF validation which will cause 400 HTTP status
     if isinstance(exc, DjValidationError):
-        data = exc.message_dict
-        if DJ_NON_FIELD_ERRORS in data:
-            data[DRF_NON_FIELD_ERRORS] = data[DJ_NON_FIELD_ERRORS]
-            del data[DJ_NON_FIELD_ERRORS]
+        if hasattr(exc, "error_dict"):
+            data = exc.message_dict
+            if DJ_NON_FIELD_ERRORS in data:
+                data[DRF_NON_FIELD_ERRORS] = data[DJ_NON_FIELD_ERRORS]
+                del data[DJ_NON_FIELD_ERRORS]
+        else:
+            data = {DRF_NON_FIELD_ERRORS: exc.messages}
 
         exc = DRFValidationError(detail=data)
 
