@@ -1,14 +1,14 @@
-import re
-
 import structlog
+from datetime import date
 from django.contrib.auth import authenticate, password_validation
+from django.utils import timezone
 from rest_framework import serializers
 
 from core.serializer_fields import FieldsRelatedField
 
 from .models import (
+    Folder,
     PersonalAccessToken,
-    SA_EMAIL_DOMAIN,
     User,
 )
 
@@ -135,25 +135,20 @@ class PersonalAccessTokenReadSerializer(serializers.ModelSerializer):
         fields = ["name", "user", "created", "expiry", "digest"]
 
 
-_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,62}[a-z0-9]$|^[a-z0-9]$")
-
-
 class ServiceAccountCreateSerializer(serializers.Serializer):
     """Create a new service account. The email is built from the slug."""
 
     slug = serializers.CharField(max_length=64)
-    description = serializers.CharField(
-        max_length=500, required=False, allow_blank=True, default=""
-    )
+    description = serializers.CharField(required=False, allow_blank=True, default="")
     expiry_date = serializers.DateField(required=False, allow_null=True, default=None)
 
-    def validate_slug(self, value):
+    def validate_slug(self, value: str) -> str:
         value = value.lower().strip()
-        if not _SLUG_RE.match(value):
+        if User._SLUG_RE.fullmatch(value) is None:
             raise serializers.ValidationError(
                 "Slug must be lowercase alphanumeric with hyphens, no leading/trailing hyphens."
             )
-        email = f"{value}@{SA_EMAIL_DOMAIN}"
+        email = f"{value}@{User.SA_EMAIL_DOMAIN}"
         if User.objects.filter(email__iexact=email).exists():
             raise serializers.ValidationError(
                 "A service account with this name already exists."
@@ -162,8 +157,7 @@ class ServiceAccountCreateSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         slug = validated_data["slug"]
-        email = f"{slug}@{SA_EMAIL_DOMAIN}"
-        from iam.models import Folder
+        email = f"{slug}@{User.SA_EMAIL_DOMAIN}"
 
         user = User(
             email=email,
@@ -189,6 +183,7 @@ class ServiceAccountReadSerializer(serializers.ModelSerializer):
     slug = serializers.SerializerMethodField()
     description = serializers.CharField(source="observation")
     active_key_count = serializers.SerializerMethodField()
+    user_groups = FieldsRelatedField(fields=["builtin", "id"], many=True)
 
     class Meta:
         model = User
@@ -196,6 +191,7 @@ class ServiceAccountReadSerializer(serializers.ModelSerializer):
             "id",
             "slug",
             "email",
+            "user_groups",
             "description",
             "is_active",
             "expiry_date",
@@ -203,14 +199,12 @@ class ServiceAccountReadSerializer(serializers.ModelSerializer):
             "active_key_count",
         ]
 
-    def get_slug(self, obj):
+    def get_slug(self, obj: User) -> str:
         return obj.email.split("@")[0]
 
-    def get_active_key_count(self, obj):
+    def get_active_key_count(self, obj: User) -> int:
         if hasattr(obj, "active_key_count"):
             return obj.active_key_count
-        from django.utils import timezone
-
         return PersonalAccessToken.objects.filter(
             auth_token__user=obj,
             auth_token__expiry__gt=timezone.now(),
@@ -227,9 +221,6 @@ class ServiceAccountUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["is_active", "expiry_date", "description"]
-
-
-SA_KEY_LIMIT = 2
 
 
 class ServiceAccountKeyReadSerializer(serializers.ModelSerializer):
@@ -256,11 +247,9 @@ class ServiceAccountKeyCreateSerializer(serializers.Serializer):
         queryset=User.objects.filter(is_service_account=True)
     )
     name = serializers.CharField(max_length=64)
-    expiry_days = serializers.IntegerField(min_value=1, max_value=365, default=365)
+    expiry_days = serializers.IntegerField(min_value=1, max_value=365, default=30)
 
     def validate(self, attrs):
-        from datetime import date
-
         sa = attrs["service_account"]
         if sa.expiry_date and sa.expiry_date < date.today():
             raise serializers.ValidationError(
@@ -276,16 +265,14 @@ class ServiceAccountKeyCreateSerializer(serializers.Serializer):
                     "name": "A key with this name already exists for this service account."
                 }
             )
-        from django.utils import timezone
-
         if (
             PersonalAccessToken.objects.filter(
                 auth_token__user=sa,
                 auth_token__expiry__gt=timezone.now(),
             ).count()
-            >= SA_KEY_LIMIT
+            >= User.SA_KEY_LIMIT
         ):
             raise serializers.ValidationError(
-                f"Service account already has {SA_KEY_LIMIT} active keys. Revoke one first."
+                f"Service account already has {User.SA_KEY_LIMIT} active keys. Revoke one first."
             )
         return attrs

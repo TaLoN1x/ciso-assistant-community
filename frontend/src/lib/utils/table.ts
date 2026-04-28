@@ -1712,8 +1712,16 @@ export const listViewFields = {
 		}
 	},
 	'service-accounts': {
-		head: ['email', 'name', 'description', 'isActive', 'activeKeys', 'expiryDate'],
-		body: ['email', 'slug', 'description', 'is_active', 'active_key_count', 'expiry_date']
+		head: ['email', 'name', 'userGroups', 'description', 'isActive', 'activeKeys', 'expiryDate'],
+		body: [
+			'email',
+			'slug',
+			'user_groups',
+			'description',
+			'is_active',
+			'active_key_count',
+			'expiry_date'
+		]
 	},
 	'service-account-keys': {
 		head: ['name', 'createdAt', 'expiryDate'],

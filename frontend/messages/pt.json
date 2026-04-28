@@ -1143,5 +1143,20 @@
 	"confirmModalMessagePlural": "Você tem certeza? Esta ação afetará permanentemente os seguintes objetos",
 	"syncAppliedControlsMessage": "Os controles aplicados que utilizam este controle de referência serão sincronizados com ele. Observe que esta ação não pode ser desfeita.",
 	"syncToAppliedControl": "Sincronizar com o controle aplicado",
-	"syncToReferenceControl": "Sincronizar com o controle de referência"
+	"syncToReferenceControl": "Sincronizar com o controle de referência",
+	"isServiceAccount": "É uma conta de serviço",
+	"serviceAccountKeys": "Chaves API",
+	"serviceAccountKey": "Chave API",
+	"addServiceAccountKey": "Adicionar chave API",
+	"serviceAccount": "Conta de serviço",
+	"serviceAccounts": "Contas de serviço",
+	"serviceAccountsFlagDescription": "Ativar contas de serviço para permitir acesso à API através de tokens de longa duração",
+	"createServiceAccount": "Criar conta de serviço",
+	"serviceAccountIdentifiedAs": "A conta de serviço será identificada como",
+	"serviceAccountSlugHelpText": "Alfanumérico em minúsculas e hífens (ex. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Opcional — para que esta conta é utilizada",
+	"noExpiry": "Deixe vazio para sem expiração.",
+	"keyName": "Nome da chave",
+	"keyNameHelpText": "ex. \"principal\" ou \"ci-pipeline\"",
+	"tokenWarning": "Copie este token agora — não será mostrado novamente."
 }

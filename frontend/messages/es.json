@@ -3168,5 +3168,20 @@
 	"syncAppliedControlsMessage": "Los controles aplicados que utilizan este control de referencia se sincronizarán con él. Tenga en cuenta que esto no se puede deshacer.",
 	"syncToAppliedControl": "Sincronizar con el control aplicado",
 	"syncToReferenceControl": "Sincronizar con el control de referencia",
-	"exportEcosystem": "exportación de ecosistema (XLSX)"
+	"exportEcosystem": "exportación de ecosistema (XLSX)",
+	"isServiceAccount": "Es una cuenta de servicio",
+	"serviceAccountKeys": "Claves API",
+	"serviceAccountKey": "Clave API",
+	"addServiceAccountKey": "Añadir clave API",
+	"serviceAccount": "Cuenta de servicio",
+	"serviceAccounts": "Cuentas de servicio",
+	"serviceAccountsFlagDescription": "Activar cuentas de servicio para permitir acceso a la API mediante tokens de larga duración",
+	"createServiceAccount": "Crear cuenta de servicio",
+	"serviceAccountIdentifiedAs": "La cuenta de servicio será identificada como",
+	"serviceAccountSlugHelpText": "Alfanumérico en minúsculas e guiones (ej. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Opcional — para qué se usa esta cuenta de servicio",
+	"noExpiry": "Dejar vacío para sin caducidad.",
+	"keyName": "Nombre de clave",
+	"keyNameHelpText": "ej. \"principal\" o \"ci-pipeline\"",
+	"tokenWarning": "Copie este token ahora — no se volverá a mostrar."
 }

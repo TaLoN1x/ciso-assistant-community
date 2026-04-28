@@ -3027,5 +3027,20 @@
 	"syncAppliedControlsMessage": "Die angewendeten Kontrollen, die diese Referenzkontrolle verwenden, werden mit ihr synchronisiert. Bitte beachten Sie, dass dies nicht rückgängig gemacht werden kann.",
 	"syncToAppliedControl": "Mit angewendeter Maßnahme synchronisieren",
 	"syncToReferenceControl": "Mit Referenzkontrolle synchronisieren",
-	"exportEcosystem": "Ökosystem-Export (XLSX)"
+	"exportEcosystem": "Ökosystem-Export (XLSX)",
+	"isServiceAccount": "Ist ein Dienstkonto",
+	"serviceAccountKeys": "API-Schlüssel",
+	"serviceAccountKey": "API-Schlüssel",
+	"addServiceAccountKey": "API-Schlüssel hinzufügen",
+	"serviceAccount": "Dienstkonto",
+	"serviceAccounts": "Dienstkonten",
+	"serviceAccountsFlagDescription": "Dienstkonten aktivieren, um API-Zugriff über langlebige Token zu ermöglichen",
+	"createServiceAccount": "Dienstkonto erstellen",
+	"serviceAccountIdentifiedAs": "Das Dienstkonto wird identifiziert als",
+	"serviceAccountSlugHelpText": "Kleinbuchstaben, Ziffern und Bindestriche (z.B. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Optional — Verwendungszweck dieses Dienstkontos",
+	"noExpiry": "Leer lassen für kein Ablaufdatum.",
+	"keyName": "Schlüsselname",
+	"keyNameHelpText": "z.B. \"primär\" oder \"ci-pipeline\"",
+	"tokenWarning": "Kopieren Sie diesen Token jetzt — er wird nicht wieder angezeigt."
 }

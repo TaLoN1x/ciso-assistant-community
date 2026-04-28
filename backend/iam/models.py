@@ -4,7 +4,8 @@ Inspired from Azure IAM model"""
 from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Dict, Generator, List, Optional, Tuple
+import re
+from typing import Any, ClassVar, Dict, Final, Generator, List, Optional, Tuple
 from typing import TYPE_CHECKING, Set, cast
 import uuid
 from allauth.account.models import EmailAddress
@@ -652,6 +653,12 @@ class User(ActorSyncMixin, AbstractBaseUser, AbstractBaseModel, FolderMixin):
 
     # USERNAME_FIELD is used as the unique identifier for the user
     # and is required by Django to be set to a non-empty value.
+    SA_EMAIL_DOMAIN: ClassVar[Final[str]] = "serviceaccount.ciso-assistant.com"
+    SA_KEY_LIMIT: ClassVar[Final[int]] = 2
+    _SLUG_RE: ClassVar[Final[re.Pattern[str]]] = re.compile(
+        r"^[a-z0-9][a-z0-9\-]{0,62}[a-z0-9]$|^[a-z0-9]$"
+    )
+
     # See https://docs.djangoproject.com/en/3.2/topics/auth/customizing/#django.contrib.auth.models.CustomUser.USERNAME_FIELD
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
@@ -1576,9 +1583,6 @@ class PersonalAccessToken(models.Model):
 
     def __str__(self):
         return f"{self.auth_token.user.email} : {self.name} : {self.auth_token.digest}"
-
-
-SA_EMAIL_DOMAIN = "serviceaccount.ciso-assistant.com"
 
 
 common_exclude = ["created_at", "updated_at"]

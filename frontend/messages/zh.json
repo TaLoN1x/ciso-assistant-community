@@ -3180,5 +3180,20 @@
 	"syncAppliedControlsMessage": "使用此参考控制措施的已应用控制措施将与其同步。请注意，此操作无法撤销。",
 	"syncToAppliedControl": "同步到已实施控制措施",
 	"syncToReferenceControl": "与参考控制措施同步",
-	"exportEcosystem": "生态系统导出 (XLSX)"
+	"exportEcosystem": "生态系统导出 (XLSX)",
+	"isServiceAccount": "是服务账户",
+	"serviceAccountKeys": "API 密钥",
+	"serviceAccountKey": "API 密钥",
+	"addServiceAccountKey": "添加 API 密钥",
+	"serviceAccount": "服务账户",
+	"serviceAccounts": "服务账户",
+	"serviceAccountsFlagDescription": "启用服务账户以允许通过长期令牌进行 API 访问",
+	"createServiceAccount": "创建服务账户",
+	"serviceAccountIdentifiedAs": "服务账户将被识别为",
+	"serviceAccountSlugHelpText": "小写字母、数字和连字符（如 ci-pipeline）",
+	"serviceAccountDescriptionHelpText": "可选 — 此服务账户的用途",
+	"noExpiry": "留空表示永不过期。",
+	"keyName": "密钥名称",
+	"keyNameHelpText": "如 \"primary\" 或 \"ci-pipeline\"",
+	"tokenWarning": "请立即复制此令牌 — 它将不会再次显示。"
 }

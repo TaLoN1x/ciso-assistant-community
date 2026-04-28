@@ -1663,5 +1663,20 @@
 	"syncAppliedControlsMessage": "Застосовані контролі, що використовують цей типовий контроль, будуть синхронізовані з ним. Зверніть увагу, що цю дію неможливо скасувати.",
 	"syncToAppliedControl": "Синхронізувати із застосованим контролем",
 	"syncToReferenceControl": "Синхронізувати з типовим контролем",
-	"exportEcosystem": "експорт екосистеми (XLSX)"
+	"exportEcosystem": "експорт екосистеми (XLSX)",
+	"isServiceAccount": "Є сервісним обліковим записом",
+	"serviceAccountKeys": "API-ключі",
+	"serviceAccountKey": "API-ключ",
+	"addServiceAccountKey": "Додати API-ключ",
+	"serviceAccount": "Сервісний обліковий запис",
+	"serviceAccounts": "Сервісні облікові записи",
+	"serviceAccountsFlagDescription": "Увімкніть сервісні облікові записи для доступу до API через довготривалі токени",
+	"createServiceAccount": "Створити сервісний обліковий запис",
+	"serviceAccountIdentifiedAs": "Сервісний обліковий запис буде ідентифіковано як",
+	"serviceAccountSlugHelpText": "Малі літери, цифри та дефіси (наприклад ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Необов'язково — для чого використовується цей обліковий запис",
+	"noExpiry": "Залиште порожнім для відсутності терміну дії.",
+	"keyName": "Назва ключа",
+	"keyNameHelpText": "наприклад \"основний\" або \"ci-pipeline\"",
+	"tokenWarning": "Скопіюйте цей токен зараз — він більше не буде показаний."
 }

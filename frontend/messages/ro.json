@@ -1141,5 +1141,20 @@
 	"syncAppliedControlsMessage": "Controalele aplicate care utilizează acest control de referință vor fi sincronizate cu acesta. Vă rugăm să rețineți că această acțiune nu poate fi anulată.",
 	"syncToAppliedControl": "Sincronizează cu controlul aplicat",
 	"syncToReferenceControl": "Sincronizează cu controlul de referință",
-	"exportEcosystem": "export ecosistem (XLSX)"
+	"exportEcosystem": "export ecosistem (XLSX)",
+	"isServiceAccount": "Este un cont de serviciu",
+	"serviceAccountKeys": "Chei API",
+	"serviceAccountKey": "Cheie API",
+	"addServiceAccountKey": "Adaugă cheie API",
+	"serviceAccount": "Cont de serviciu",
+	"serviceAccounts": "Conturi de serviciu",
+	"serviceAccountsFlagDescription": "Activați conturile de serviciu pentru a permite accesul API prin token-uri de lungă durată",
+	"createServiceAccount": "Creare cont de serviciu",
+	"serviceAccountIdentifiedAs": "Contul de serviciu va fi identificat ca",
+	"serviceAccountSlugHelpText": "Alfanumeric cu litere mici și cratime (ex. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Opțional — la ce se folosește acest cont",
+	"noExpiry": "Lăsați gol pentru fără expirare.",
+	"keyName": "Numele cheii",
+	"keyNameHelpText": "ex. \"principal\" sau \"ci-pipeline\"",
+	"tokenWarning": "Copiați acest token acum — nu va mai fi afișat."
 }

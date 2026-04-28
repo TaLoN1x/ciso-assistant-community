@@ -1135,5 +1135,20 @@
 	"syncAppliedControlsMessage": "De tillämpade kontroller som använder denna referenskontroll kommer att synkroniseras med den. Observera att detta inte kan ångras.",
 	"syncToAppliedControl": "Synkronisera med tillämpad kontroll",
 	"syncToReferenceControl": "Synkronisera med referenskontroll",
-	"exportEcosystem": "ekosystemexport (XLSX)"
+	"exportEcosystem": "ekosystemexport (XLSX)",
+	"isServiceAccount": "Är ett tjänstkonto",
+	"serviceAccountKeys": "API-nycklar",
+	"serviceAccountKey": "API-nyckel",
+	"addServiceAccountKey": "Lägg till API-nyckel",
+	"serviceAccount": "Tjänstkonto",
+	"serviceAccounts": "Tjänstkonton",
+	"serviceAccountsFlagDescription": "Aktivera tjänstkonton för att tillåta API-åtkomst via långlivade tokens",
+	"createServiceAccount": "Skapa tjänstkonto",
+	"serviceAccountIdentifiedAs": "Tjänstkontot kommer att identifieras som",
+	"serviceAccountSlugHelpText": "Gemener, siffror och bindestreck (t.ex. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Valfritt — vad detta konto används till",
+	"noExpiry": "Lämna tomt för inget utgångsdatum.",
+	"keyName": "Nyckelnamn",
+	"keyNameHelpText": "t.ex. \"primär\" eller \"ci-pipeline\"",
+	"tokenWarning": "Kopiera denna token nu — den visas inte igen."
 }

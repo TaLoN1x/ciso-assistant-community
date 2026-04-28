@@ -1113,5 +1113,20 @@
 	"syncAppliedControlsMessage": "इस संदर्भ नियंत्रण का उपयोग करने वाले लागू नियंत्रण इसके साथ सिंक किए जाएंगे। कृपया ध्यान दें कि इसे वापस नहीं किया जा सकता।",
 	"syncToAppliedControl": "लागू नियंत्रण के साथ सिंक करें",
 	"syncToReferenceControl": "संदर्भ नियंत्रण के साथ सिंक करें",
-	"exportEcosystem": "पारिस्थितिकी तंत्र निर्यात (XLSX)"
+	"exportEcosystem": "पारिस्थितिकी तंत्र निर्यात (XLSX)",
+	"isServiceAccount": "सेवा खाता है",
+	"serviceAccountKeys": "API कुंजियाँ",
+	"serviceAccountKey": "API कुंजी",
+	"addServiceAccountKey": "API कुंजी जोड़ें",
+	"serviceAccount": "सेवा खाता",
+	"serviceAccounts": "सेवा खाते",
+	"serviceAccountsFlagDescription": "दीर्घकालिक टोकन के माध्यम से API एक्सेस की अनुमति देने के लिए सेवा खाते सक्षम करें",
+	"createServiceAccount": "सेवा खाता बनाएं",
+	"serviceAccountIdentifiedAs": "सेवा खाते को इस नाम से पहचाना जाएगा",
+	"serviceAccountSlugHelpText": "छोटे अक्षर, अंक और हाइफ़न (जैसे ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "वैकल्पिक — यह खाता किस लिए उपयोग होता है",
+	"noExpiry": "बिना समाप्ति के खाली छोड़ें।",
+	"keyName": "कुंजी का नाम",
+	"keyNameHelpText": "जैसे \"प्राथमिक\" या \"ci-pipeline\"",
+	"tokenWarning": "इस टोकन को अभी कॉपी करें — यह फिर नहीं दिखाया जाएगा।"
 }

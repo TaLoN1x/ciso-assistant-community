@@ -4,7 +4,8 @@ from datetime import timedelta
 import structlog
 from allauth.account.models import EmailAddress
 from django.contrib.auth import get_user_model, login, logout
-from django.db.models import Q, Exists, OuterRef
+from django.db import transaction
+from django.db.models import Count, Q, Exists, OuterRef
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -27,6 +28,7 @@ from rest_framework.status import (
 
 from django.conf import settings
 
+from core.pagination import CustomLimitOffsetPagination
 from global_settings.models import GlobalSettings
 from core.models import Actor
 from core.permissions import IsAdministrator
@@ -508,14 +510,10 @@ class RevokeOtherSessionsView(views.APIView):
         )
 
 
-class ServiceAccountListCreateView(views.APIView):
+class ServiceAccountListView(views.APIView):
     permission_classes = [permissions.IsAuthenticated, IsAdministrator]
 
     def get(self, request):
-        from core.pagination import CustomLimitOffsetPagination
-        from django.db.models import Count, Q
-        from django.utils import timezone
-
         qs = (
             User.objects.filter(is_service_account=True)
             .annotate(
@@ -580,7 +578,7 @@ class ServiceAccountDetailView(views.APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class ServiceAccountKeyListCreateView(views.APIView):
+class ServiceAccountKeyListView(views.APIView):
     permission_classes = [permissions.IsAuthenticated, IsAdministrator]
 
     def _get_sa(self, sa_pk):
@@ -608,18 +606,16 @@ class ServiceAccountKeyListCreateView(views.APIView):
         serializer = ServiceAccountKeyCreateSerializer(data=data)
         serializer.is_valid(raise_exception=True)
 
-        from django.db import transaction
-
         with transaction.atomic():
             locked_sa = User.objects.select_for_update().get(pk=sa_pk)
             active_count = PersonalAccessToken.objects.filter(
                 auth_token__user=locked_sa,
                 auth_token__expiry__gt=timezone.now(),
             ).count()
-            if active_count >= SA_KEY_LIMIT:
+            if active_count >= User.SA_KEY_LIMIT:
                 return Response(
                     {
-                        "error": f"Service account already has {SA_KEY_LIMIT} active keys. Revoke one first."
+                        "error": f"Service account already has {User.SA_KEY_LIMIT} active keys. Revoke one first."
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
@@ -699,7 +695,7 @@ class ServiceAccountKeyDetailView(views.APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class ServiceAccountKeyFlatListCreateView(views.APIView):
+class ServiceAccountKeyFlatListView(views.APIView):
     """Flat endpoint: GET /iam/service-account-keys/?service_account=<uuid>, POST to create."""
 
     permission_classes = [permissions.IsAuthenticated, IsAdministrator]
@@ -711,8 +707,6 @@ class ServiceAccountKeyFlatListCreateView(views.APIView):
         )
         if sa_id:
             qs = qs.filter(auth_token__user__pk=sa_id)
-        from core.pagination import CustomLimitOffsetPagination
-
         paginator = CustomLimitOffsetPagination()
         page = paginator.paginate_queryset(qs.order_by("auth_token__created"), request)
         serializer = ServiceAccountKeyReadSerializer(page, many=True)
@@ -723,18 +717,16 @@ class ServiceAccountKeyFlatListCreateView(views.APIView):
         serializer.is_valid(raise_exception=True)
         sa = serializer.validated_data["service_account"]
 
-        from django.db import transaction
-
         with transaction.atomic():
             locked_sa = User.objects.select_for_update().get(pk=sa.pk)
             active_count = PersonalAccessToken.objects.filter(
                 auth_token__user=locked_sa,
                 auth_token__expiry__gt=timezone.now(),
             ).count()
-            if active_count >= SA_KEY_LIMIT:
+            if active_count >= User.SA_KEY_LIMIT:
                 return Response(
                     {
-                        "error": f"Service account already has {SA_KEY_LIMIT} active keys. Revoke one first."
+                        "error": f"Service account already has {User.SA_KEY_LIMIT} active keys. Revoke one first."
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )

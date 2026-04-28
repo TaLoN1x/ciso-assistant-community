@@ -3028,5 +3028,20 @@
 	"syncAppliedControlsMessage": "De toegepaste controles die deze referentiecontrole gebruiken, worden ermee gesynchroniseerd. Houd er rekening mee dat dit niet ongedaan kan worden gemaakt.",
 	"syncToAppliedControl": "Synchroniseren met toegepaste controle",
 	"syncToReferenceControl": "Synchroniseren met referentiecontrole",
-	"exportEcosystem": "ecosysteem export (XLSX)"
+	"exportEcosystem": "ecosysteem export (XLSX)",
+	"isServiceAccount": "Is een serviceaccount",
+	"serviceAccountKeys": "API-sleutels",
+	"serviceAccountKey": "API-sleutel",
+	"addServiceAccountKey": "API-sleutel toevoegen",
+	"serviceAccount": "Serviceaccount",
+	"serviceAccounts": "Serviceaccounts",
+	"serviceAccountsFlagDescription": "Serviceaccounts inschakelen voor API-toegang via langlevende tokens",
+	"createServiceAccount": "Serviceaccount aanmaken",
+	"serviceAccountIdentifiedAs": "Het serviceaccount wordt geïdentificeerd als",
+	"serviceAccountSlugHelpText": "Kleine letters, cijfers en koppeltekens (bijv. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Optioneel — waarvoor dit account wordt gebruikt",
+	"noExpiry": "Leeglaten voor geen vervaldatum.",
+	"keyName": "Sleutelnaam",
+	"keyNameHelpText": "bijv. \"primair\" of \"ci-pipeline\"",
+	"tokenWarning": "Kopieer dit token nu — het wordt niet meer weergegeven."
 }

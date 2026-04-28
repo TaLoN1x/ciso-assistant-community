@@ -1881,5 +1881,20 @@
 	"syncAppliedControlsMessage": "Bu referans kontrolü kullanan uygulanan kontroller onunla senkronize edilecektir. Lütfen bunun geri alınamayacağını unutmayın.",
 	"syncToAppliedControl": "Uygulanan kontrol ile senkronize et",
 	"syncToReferenceControl": "Referans kontrol ile senkronize et",
-	"exportEcosystem": "ekosistem dışa aktarımı (XLSX)"
+	"exportEcosystem": "ekosistem dışa aktarımı (XLSX)",
+	"isServiceAccount": "Bir hizmet hesabıdır",
+	"serviceAccountKeys": "API anahtarları",
+	"serviceAccountKey": "API anahtarı",
+	"addServiceAccountKey": "API anahtarı ekle",
+	"serviceAccount": "Hizmet hesabı",
+	"serviceAccounts": "Hizmet hesapları",
+	"serviceAccountsFlagDescription": "Uzun ömürlü tokenlar aracılığıyla API erişimine izin vermek için hizmet hesaplarını etkinleştirin",
+	"createServiceAccount": "Hizmet hesabı oluştur",
+	"serviceAccountIdentifiedAs": "Hizmet hesabı şu şekilde tanımlanacak",
+	"serviceAccountSlugHelpText": "Küçük harf, rakam ve kısa çizgi (örn. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "İsteğe bağlı — bu hesabın kullanım amacı",
+	"noExpiry": "Süresiz için boş bırakın.",
+	"keyName": "Anahtar adı",
+	"keyNameHelpText": "örn. \"birincil\" veya \"ci-pipeline\"",
+	"tokenWarning": "Bu tokeni şimdi kopyalayın — bir daha gösterilmeyecektir."
 }

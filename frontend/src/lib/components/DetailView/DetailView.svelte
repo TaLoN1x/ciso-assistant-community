@@ -28,6 +28,8 @@
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import { getListViewFields } from '$lib/utils/table';
 	import { canPerformAction } from '$lib/utils/access-control';
+	import type { urlModel } from '$lib/utils/types';
+	import type { ComponentType } from 'svelte';
 	import {
 		getModalStore,
 		type ModalComponent,
@@ -175,11 +177,11 @@
 		};
 	});
 
-	const customCreateComponents: Record<string, any> = {
+	const customCreateComponents: Record<urlModel, ComponentType> = {
 		'service-account-keys': CreateSAKeyModal
 	};
 
-	function modalCreateForm(model: Record<string, any>, field?: ReverseForeignKeyField): void {
+	function modalCreateForm(model: Record<string, any>): void {
 		const ref = customCreateComponents[model.urlModel] ?? CreateModal;
 		const isCustomComponent = ref !== CreateModal;
 		let modalComponent: ModalComponent = {
@@ -940,7 +942,7 @@
 												class="inline-block border-e p-3 btn-mini-primary w-12 focus:relative"
 												data-testid="add-button"
 												title={safeTranslate('add-' + model.info.localName)}
-												onclick={(_) => modalCreateForm(model, field)}
+												onclick={(_) => modalCreateForm(model)}
 											>
 												<i class="fa-solid fa-file-circle-plus"></i>
 											</button>
@@ -963,7 +965,7 @@
 										<button
 											class="btn preset-filled-primary-500 self-end my-auto"
 											data-testid="add-button"
-											onclick={(_) => modalCreateForm(model, field)}
+											onclick={(_) => modalCreateForm(model)}
 											><i class="fa-solid fa-plus mr-2 lowercase"></i>{safeTranslate(
 												'add-' + model.info.localName
 											)}</button

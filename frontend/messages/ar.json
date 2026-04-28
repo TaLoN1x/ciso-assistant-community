@@ -1112,5 +1112,20 @@
 	"syncAppliedControlsMessage": "سيتم مزامنة عناصر التحكم المطبقة التي تستخدم عنصر التحكم المرجعي هذا معه. يرجى ملاحظة أن هذا الإجراء لا يمكن التراجع عنه.",
 	"syncToAppliedControl": "مزامنة مع التحكم المطبق",
 	"syncToReferenceControl": "مزامنة مع التحكم المرجعي",
-	"exportEcosystem": "تصدير النظام البيئي (XLSX)"
+	"exportEcosystem": "تصدير النظام البيئي (XLSX)",
+	"isServiceAccount": "هو حساب خدمة",
+	"serviceAccountKeys": "مفاتيح API",
+	"serviceAccountKey": "مفتاح API",
+	"addServiceAccountKey": "إضافة مفتاح API",
+	"serviceAccount": "حساب الخدمة",
+	"serviceAccounts": "حسابات الخدمة",
+	"serviceAccountsFlagDescription": "تفعيل حسابات الخدمة للسماح بالوصول إلى API عبر رموز طويلة الأمد",
+	"createServiceAccount": "إنشاء حساب خدمة",
+	"serviceAccountIdentifiedAs": "سيتم التعرف على حساب الخدمة باسم",
+	"serviceAccountSlugHelpText": "أحرف صغيرة وأرقام وشرطات (مثال: ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "اختياري — ما يُستخدم لأجله هذا الحساب",
+	"noExpiry": "اتركه فارغاً لعدم الانتهاء.",
+	"keyName": "اسم المفتاح",
+	"keyNameHelpText": "مثال: «رئيسي» أو «ci-pipeline»",
+	"tokenWarning": "انسخ هذا الرمز الآن — لن يُعرض مرة أخرى."
 }

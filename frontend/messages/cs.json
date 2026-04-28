@@ -1132,5 +1132,20 @@
 	"syncAppliedControlsMessage": "Použité kontroly využívající tuto referenční kontrolu s ní budou synchronizovány. Upozorňujeme, že tuto akci nelze vrátit zpět.",
 	"syncToAppliedControl": "Synchronizovat s aplikovanou kontrolou",
 	"syncToReferenceControl": "Synchronizovat s referenční kontrolou",
-	"exportEcosystem": "export ekosystému (XLSX)"
+	"exportEcosystem": "export ekosystému (XLSX)",
+	"isServiceAccount": "Je servisní účet",
+	"serviceAccountKeys": "API klíče",
+	"serviceAccountKey": "API klíč",
+	"addServiceAccountKey": "Přidat API klíč",
+	"serviceAccount": "Servisní účet",
+	"serviceAccounts": "Servisní účty",
+	"serviceAccountsFlagDescription": "Povolení servisních účtů pro přístup k API přes dlouhodobé tokeny",
+	"createServiceAccount": "Vytvořit servisní účet",
+	"serviceAccountIdentifiedAs": "Servisní účet bude identifikován jako",
+	"serviceAccountSlugHelpText": "Malá písmena, číslice a pomlčky (např. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Volitelné — k čemu tento servisní účet slouží",
+	"noExpiry": "Ponechte prázdné pro neomezené trvání.",
+	"keyName": "Název klíče",
+	"keyNameHelpText": "např. \"primární\" nebo \"ci-pipeline\"",
+	"tokenWarning": "Zkopírujte tento token nyní — nebude znovu zobrazen."
 }

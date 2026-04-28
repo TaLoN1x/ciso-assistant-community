@@ -1329,5 +1329,20 @@
 	"syncAppliedControlsMessage": "Kontrol yang diterapkan yang menggunakan kontrol referensi ini akan disinkronkan dengannya. Harap dicatat bahwa tindakan ini tidak dapat dibatalkan.",
 	"syncToAppliedControl": "Sinkronkan dengan kontrol yang diterapkan",
 	"syncToReferenceControl": "Sinkronkan dengan kontrol referensi",
-	"exportEcosystem": "ekspor ekosistem (XLSX)"
+	"exportEcosystem": "ekspor ekosistem (XLSX)",
+	"isServiceAccount": "Adalah akun layanan",
+	"serviceAccountKeys": "Kunci API",
+	"serviceAccountKey": "Kunci API",
+	"addServiceAccountKey": "Tambah kunci API",
+	"serviceAccount": "Akun layanan",
+	"serviceAccounts": "Akun layanan",
+	"serviceAccountsFlagDescription": "Aktifkan akun layanan untuk mengizinkan akses API melalui token berumur panjang",
+	"createServiceAccount": "Buat akun layanan",
+	"serviceAccountIdentifiedAs": "Akun layanan akan diidentifikasi sebagai",
+	"serviceAccountSlugHelpText": "Huruf kecil, angka, dan tanda hubung (mis. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Opsional — untuk apa akun layanan ini digunakan",
+	"noExpiry": "Kosongkan untuk tanpa kedaluwarsa.",
+	"keyName": "Nama kunci",
+	"keyNameHelpText": "mis. \"utama\" atau \"ci-pipeline\"",
+	"tokenWarning": "Salin token ini sekarang — tidak akan ditampilkan lagi."
 }

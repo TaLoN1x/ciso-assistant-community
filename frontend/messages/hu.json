@@ -1144,5 +1144,20 @@
 	"syncAppliedControlsMessage": "Azok az alkalmazott kontrollok, amelyek ezt a referencia kontrollt használják, szinkronizálva lesznek vele. Kérjük, vegye figyelembe, hogy ez nem vonható vissza.",
 	"syncToAppliedControl": "Szinkronizálás az alkalmazott kontrollal",
 	"syncToReferenceControl": "Szinkronizálás a referencia kontrollal",
-	"exportEcosystem": "ökoszisztéma export (XLSX)"
+	"exportEcosystem": "ökoszisztéma export (XLSX)",
+	"isServiceAccount": "Szolgáltatásfiók",
+	"serviceAccountKeys": "API-kulcsok",
+	"serviceAccountKey": "API-kulcs",
+	"addServiceAccountKey": "API-kulcs hozzáadása",
+	"serviceAccount": "Szolgáltatásfiók",
+	"serviceAccounts": "Szolgáltatásfiókok",
+	"serviceAccountsFlagDescription": "Szolgáltatásfiókok engedélyezése hosszú életű tokeneken keresztüli API-hozzáféréshez",
+	"createServiceAccount": "Szolgáltatásfiók létrehozása",
+	"serviceAccountIdentifiedAs": "A szolgáltatásfiók azonosítása a következő lesz",
+	"serviceAccountSlugHelpText": "Kisbetűk, számok és kötőjelek (pl. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Opcionális — mire való ez a fiók",
+	"noExpiry": "Hagyja üresen a lejárat nélküli beállításhoz.",
+	"keyName": "Kulcs neve",
+	"keyNameHelpText": "pl. \"elsődleges\" vagy \"ci-pipeline\"",
+	"tokenWarning": "Másolja le ezt a tokent most — többet nem jelenik meg."
 }

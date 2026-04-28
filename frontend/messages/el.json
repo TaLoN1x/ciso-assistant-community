@@ -1843,5 +1843,20 @@
 	"syncAppliedControlsMessage": "Οι εφαρμοζόμενοι έλεγχοι που χρησιμοποιούν αυτόν τον πρότυπο έλεγχο θα συγχρονιστούν με αυτόν. Λάβετε υπόψη ότι αυτή η ενέργεια δεν μπορεί να αναιρεθεί.",
 	"syncToAppliedControl": "Συγχρονισμός με τον εφαρμοζόμενο έλεγχο",
 	"syncToReferenceControl": "Συγχρονισμός με τον πρότυπο έλεγχο",
-	"exportEcosystem": "εξαγωγή οικοσυστήματος (XLSX)"
+	"exportEcosystem": "εξαγωγή οικοσυστήματος (XLSX)",
+	"isServiceAccount": "Είναι λογαριασμός υπηρεσίας",
+	"serviceAccountKeys": "Κλειδιά API",
+	"serviceAccountKey": "Κλειδί API",
+	"addServiceAccountKey": "Προσθήκη κλειδιού API",
+	"serviceAccount": "Λογαριασμός υπηρεσίας",
+	"serviceAccounts": "Λογαριασμοί υπηρεσιών",
+	"serviceAccountsFlagDescription": "Ενεργοποίηση λογαριασμών υπηρεσιών για πρόσβαση API μέσω μακροχρόνιων token",
+	"createServiceAccount": "Δημιουργία λογαριασμού υπηρεσίας",
+	"serviceAccountIdentifiedAs": "Ο λογαριασμός υπηρεσίας θα αναγνωρίζεται ως",
+	"serviceAccountSlugHelpText": "Πεζά αλφαριθμητικά και παύλες (π.χ. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Προαιρετικό — σκοπός αυτού του λογαριασμού",
+	"noExpiry": "Αφήστε κενό για χωρίς λήξη.",
+	"keyName": "Όνομα κλειδιού",
+	"keyNameHelpText": "π.χ. \"κύριο\" ή \"ci-pipeline\"",
+	"tokenWarning": "Αντιγράψτε αυτό το token τώρα — δεν θα εμφανιστεί ξανά."
 }

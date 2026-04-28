@@ -14,7 +14,7 @@ export const GET: RequestHandler = async ({ fetch, url }) => {
 		error(res.status as NumericRange<400, 599>, body);
 	}
 
-	const data = await res.json().catch(() => ({}));
+	const data = await res.json();
 	return new Response(JSON.stringify(data), {
 		status: res.status,
 		headers: { 'Content-Type': 'application/json' }

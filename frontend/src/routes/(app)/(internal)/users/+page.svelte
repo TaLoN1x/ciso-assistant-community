@@ -30,17 +30,14 @@
 
 	// Tab state (persisted in URL)
 	const VALID_TABS = ['users', 'service-accounts'] as const;
-	const rawTab = page.url.searchParams.get('tab') ?? 'users';
-	let tab = $state(
-		user?.is_admin &&
-			serviceAccountsEnabled &&
-			VALID_TABS.includes(rawTab as (typeof VALID_TABS)[number])
-			? rawTab
+	const showTabs = $derived(user?.is_admin && serviceAccountsEnabled);
+	const tab = $derived(
+		showTabs && VALID_TABS.includes(page.url.searchParams.get('tab') as (typeof VALID_TABS)[number])
+			? (page.url.searchParams.get('tab') as (typeof VALID_TABS)[number])
 			: 'users'
 	);
 
 	function switchTab(value: string) {
-		tab = value;
 		const url = new URL(page.url);
 		if (value === 'users') {
 			url.searchParams.delete('tab');
@@ -79,51 +76,45 @@
 	}
 </script>
 
-<Tabs value={tab} onValueChange={(e) => switchTab(e.value)}>
-	<Tabs.List>
-		<Tabs.Trigger value="users">
-			<i class="fa-solid fa-user mr-2"></i>{m.users()}
-		</Tabs.Trigger>
-		{#if user?.is_admin && serviceAccountsEnabled}
-			<Tabs.Trigger value="service-accounts">
-				<i class="fa-solid fa-robot mr-2"></i>{m.serviceAccounts()}
-			</Tabs.Trigger>
-		{/if}
-		<Tabs.Indicator />
-	</Tabs.List>
+{#if showTabs}
+	<div class="card shadow-lg bg-white p-4">
+		<Tabs value={tab} onValueChange={(e) => switchTab(e.value)}>
+			<Tabs.List>
+				<Tabs.Trigger value="users">
+					<i class="fa-solid fa-user mr-2"></i>{m.users()}
+				</Tabs.Trigger>
+				<Tabs.Trigger value="service-accounts">
+					<i class="fa-solid fa-robot mr-2"></i>{m.serviceAccounts()}
+				</Tabs.Trigger>
+				<Tabs.Indicator />
+			</Tabs.List>
 
-	<!--Users tab  -->
-	<Tabs.Content value="users">
-		{#if data.table}
-			<div class="shadow-lg">
-				<ModelTable
-					source={data.table}
-					deleteForm={data.deleteForm}
-					URLModel="users"
-					baseEndpoint="/users?is_service_account=false"
-				>
-					{#snippet addButton()}
-						<div class="inline-flex overflow-hidden rounded-md border bg-white shadow-xs">
-							<button
-								class="inline-block p-3 btn-mini-primary w-12 focus:relative"
-								data-testid="add-button"
-								title={safeTranslate('add-' + data.model.localName)}
-								aria-label={safeTranslate('add-' + data.model.localName)}
-								onclick={modalCreateUser}
-							>
-								<i class="fa-solid fa-file-circle-plus"></i>
-							</button>
-						</div>
-					{/snippet}
-				</ModelTable>
-			</div>
-		{/if}
-	</Tabs.Content>
+			<Tabs.Content value="users">
+				{#if data.table}
+					<ModelTable
+						source={data.table}
+						deleteForm={data.deleteForm}
+						URLModel="users"
+						baseEndpoint="/users?is_service_account=false"
+					>
+						{#snippet addButton()}
+							<div class="inline-flex overflow-hidden rounded-md border bg-white shadow-xs">
+								<button
+									class="inline-block p-3 btn-mini-primary w-12 focus:relative"
+									data-testid="add-button"
+									title={safeTranslate('add-' + data.model.localName)}
+									aria-label={safeTranslate('add-' + data.model.localName)}
+									onclick={modalCreateUser}
+								>
+									<i class="fa-solid fa-file-circle-plus"></i>
+								</button>
+							</div>
+						{/snippet}
+					</ModelTable>
+				{/if}
+			</Tabs.Content>
 
-	<!--Service accounts tab -->
-	{#if user?.is_admin && serviceAccountsEnabled}
-		<Tabs.Content value="service-accounts">
-			<div class="shadow-lg">
+			<Tabs.Content value="service-accounts">
 				<ModelTable
 					source={data.saTable ?? { head: {}, body: [], meta: [] }}
 					URLModel="users"
@@ -144,7 +135,30 @@
 						</div>
 					{/snippet}
 				</ModelTable>
-			</div>
-		</Tabs.Content>
-	{/if}
-</Tabs>
+			</Tabs.Content>
+		</Tabs>
+	</div>
+{:else if data.table}
+	<div class="shadow-lg">
+		<ModelTable
+			source={data.table}
+			deleteForm={data.deleteForm}
+			URLModel="users"
+			baseEndpoint="/users?is_service_account=false"
+		>
+			{#snippet addButton()}
+				<div class="inline-flex overflow-hidden rounded-md border bg-white shadow-xs">
+					<button
+						class="inline-block p-3 btn-mini-primary w-12 focus:relative"
+						data-testid="add-button"
+						title={safeTranslate('add-' + data.model.localName)}
+						aria-label={safeTranslate('add-' + data.model.localName)}
+						onclick={modalCreateUser}
+					>
+						<i class="fa-solid fa-file-circle-plus"></i>
+					</button>
+				</div>
+			{/snippet}
+		</ModelTable>
+	</div>
+{/if}

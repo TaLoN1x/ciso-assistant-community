@@ -3659,5 +3659,20 @@
 	"xRaysView": "Pregledaj",
 	"tasksReview": "Pregled zadataka",
 	"yearlyTasksReview": "Pregled agregiranih zadataka",
-	"exportEcosystem": "izvoz ekosustava (XLSX)"
+	"exportEcosystem": "izvoz ekosustava (XLSX)",
+	"isServiceAccount": "Je servisni račun",
+	"serviceAccountKeys": "API ključevi",
+	"serviceAccountKey": "API ključ",
+	"addServiceAccountKey": "Dodaj API ključ",
+	"serviceAccount": "Servisni račun",
+	"serviceAccounts": "Servisni računi",
+	"serviceAccountsFlagDescription": "Omogućite servisne račune za API pristup putem dugotrajnih tokena",
+	"createServiceAccount": "Stvori servisni račun",
+	"serviceAccountIdentifiedAs": "Servisni račun bit će identificiran kao",
+	"serviceAccountSlugHelpText": "Mala slova, brojevi i crtice (npr. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Opcionalno — za što se koristi ovaj servisni račun",
+	"noExpiry": "Ostavite prazno za bez isteka.",
+	"keyName": "Naziv ključa",
+	"keyNameHelpText": "npr. \"primarni\" ili \"ci-pipeline\"",
+	"tokenWarning": "Kopirajte ovaj token sada — neće biti prikazan ponovo."
 }

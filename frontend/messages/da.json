@@ -1426,5 +1426,20 @@
 	"syncAppliedControlsMessage": "De anvendte kontroller, der bruger denne referencekontrol, vil blive synkroniseret med den. Bemærk venligst, at dette ikke kan fortrydes.",
 	"syncToAppliedControl": "Synkroniser med anvendt kontrol",
 	"syncToReferenceControl": "Synkroniser med referencekontrol",
-	"exportEcosystem": "økosystem-eksport (XLSX)"
+	"exportEcosystem": "økosystem-eksport (XLSX)",
+	"isServiceAccount": "Er en tjenestekonto",
+	"serviceAccountKeys": "API-nøgler",
+	"serviceAccountKey": "API-nøgle",
+	"addServiceAccountKey": "Tilføj API-nøgle",
+	"serviceAccount": "Tjenestekonto",
+	"serviceAccounts": "Tjenestekonti",
+	"serviceAccountsFlagDescription": "Aktivér tjenestekonti for at tillade API-adgang via langlivede tokens",
+	"createServiceAccount": "Opret tjenestekonto",
+	"serviceAccountIdentifiedAs": "Tjenestekontoen identificeres som",
+	"serviceAccountSlugHelpText": "Små bogstaver, tal og bindestreger (f.eks. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Valgfrit — hvad denne tjenestekonto bruges til",
+	"noExpiry": "Lad stå tomt for ingen udløb.",
+	"keyName": "Nøglenavn",
+	"keyNameHelpText": "f.eks. \"primær\" eller \"ci-pipeline\"",
+	"tokenWarning": "Kopiér dette token nu — det vises ikke igen."
 }

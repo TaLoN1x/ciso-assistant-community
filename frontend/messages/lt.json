@@ -4122,5 +4122,20 @@
 	"allRequirements": "Visi reikalavimai",
 	"riskCoverage": "Rizikos aprėptis",
 	"soaSelectRiskDescription": "Pasirinkus rizikos vertinimus, taikymo pareiškimas bus praturtintas susietais rizikos scenarijais ir apdorojimo sprendimais",
-	"exportEcosystem": "ekosistemos eksportas (XLSX)"
+	"exportEcosystem": "ekosistemos eksportas (XLSX)",
+	"isServiceAccount": "Yra paslaugų paskyra",
+	"serviceAccountKeys": "API raktai",
+	"serviceAccountKey": "API raktas",
+	"addServiceAccountKey": "Pridėti API raktą",
+	"serviceAccount": "Paslaugų paskyra",
+	"serviceAccounts": "Paslaugų paskyros",
+	"serviceAccountsFlagDescription": "Įgalinkite paslaugų paskyras, kad leistumėte API prieigą per ilgaamžius prieigos žetonus",
+	"createServiceAccount": "Sukurti paslaugų paskyrą",
+	"serviceAccountIdentifiedAs": "Paslaugų paskyra bus identifikuojama kaip",
+	"serviceAccountSlugHelpText": "Mažosios raidės, skaičiai ir brūkšneliai (pvz. ci-pipeline)",
+	"serviceAccountDescriptionHelpText": "Neprivaloma — kam naudojama ši paskyra",
+	"noExpiry": "Palikite tuščią, kad nebūtų galiojimo laiko.",
+	"keyName": "Rakto pavadinimas",
+	"keyNameHelpText": "pvz. \"pagrindinis\" arba \"ci-pipeline\"",
+	"tokenWarning": "Nukopijuokite šį žetoną dabar — jis nebebus rodomas."
 }

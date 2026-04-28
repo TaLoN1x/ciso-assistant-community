@@ -12,9 +12,9 @@ from .views import (
     ServiceAccountDetailView,
     ServiceAccountKeyDetailView,
     ServiceAccountKeyFlatDetailView,
-    ServiceAccountKeyFlatListCreateView,
-    ServiceAccountKeyListCreateView,
-    ServiceAccountListCreateView,
+    ServiceAccountKeyFlatListView,
+    ServiceAccountKeyListView,
+    ServiceAccountListView,
     SessionTokenView,
     SetPasswordView,
     RevokeOtherSessionsView,
@@ -49,7 +49,7 @@ urlpatterns = [
     # Service accounts
     path(
         "service-accounts/",
-        ServiceAccountListCreateView.as_view(),
+        ServiceAccountListView.as_view(),
         name="service-accounts",
     ),
     path(
@@ -59,7 +59,7 @@ urlpatterns = [
     ),
     path(
         "service-accounts/<uuid:sa_pk>/keys/",
-        ServiceAccountKeyListCreateView.as_view(),
+        ServiceAccountKeyListView.as_view(),
         name="service-account-keys",
     ),
     path(
@@ -69,7 +69,7 @@ urlpatterns = [
     ),
     path(
         "service-account-keys/",
-        ServiceAccountKeyFlatListCreateView.as_view(),
+        ServiceAccountKeyFlatListView.as_view(),
         name="service-account-keys-flat",
     ),
     path(
