@@ -4216,5 +4216,7 @@
 	"enrichFromEUVD": "Enrichir depuis EUVD",
 	"syncCweCatalog": "Récupérer le catalogue CWE de MITRE",
 	"syncCweCatalogFailed": "Échec de la récupération du catalogue CWE",
-	"noDashboardSelected": "Aucun tableau de bord sélectionné"
+	"noDashboardSelected": "Aucun tableau de bord sélectionné",
+	"expiryDateCannotBeInThePast": "La date d'expiration ne peut pas être dans le passé",
+	"slugValidationError": "Lettres minuscules, chiffres et tirets uniquement, pas de tiret en début ou fin"
 }

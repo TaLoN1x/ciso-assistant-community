@@ -228,16 +228,20 @@ class ServiceAccountKeyReadSerializer(serializers.ModelSerializer):
 
     created_at = serializers.SerializerMethodField()
     expiry_date = serializers.SerializerMethodField()
+    service_account = serializers.SerializerMethodField()
 
     class Meta:
         model = PersonalAccessToken
-        fields = ["id", "name", "created_at", "expiry_date"]
+        fields = ["id", "name", "created_at", "expiry_date", "service_account"]
 
     def get_created_at(self, obj):
         return obj.auth_token.created
 
     def get_expiry_date(self, obj):
         return obj.auth_token.expiry
+
+    def get_service_account(self, obj):
+        return str(obj.auth_token.user.pk)
 
 
 class ServiceAccountKeyCreateSerializer(serializers.Serializer):

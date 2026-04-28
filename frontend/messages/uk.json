@@ -1723,5 +1723,7 @@
 	"enrichFromEUVD": "Збагачення EUVD",
 	"syncCweCatalog": "Отримати CWE",
 	"syncCweCatalogFailed": "Помилка CWE",
-	"exportEcosystem": "експорт екосистеми (XLSX)"
+	"exportEcosystem": "експорт екосистеми (XLSX)",
+	"expiryDateCannotBeInThePast": "Дата закінчення терміну дії не може бути в минулому",
+	"slugValidationError": "Лише малі літери, цифри та дефіси, без дефісів на початку або в кінці"
 }

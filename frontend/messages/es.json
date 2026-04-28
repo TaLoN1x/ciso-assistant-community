@@ -3231,5 +3231,7 @@
 	"noExpiry": "Dejar vacío para sin caducidad.",
 	"keyName": "Nombre de clave",
 	"keyNameHelpText": "ej. \"principal\" o \"ci-pipeline\"",
-	"tokenWarning": "Copie este token ahora — no se volverá a mostrar."
+	"tokenWarning": "Copie este token ahora — no se volverá a mostrar.",
+	"expiryDateCannotBeInThePast": "La fecha de vencimiento no puede estar en el pasado",
+	"slugValidationError": "Solo letras minúsculas, números y guiones, sin guiones al inicio o al final"
 }

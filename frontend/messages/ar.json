@@ -1177,5 +1177,7 @@
 	"syncCweCatalogFailed": "فشل جلب CWE",
 	"exportEcosystem": "تصدير النظام البيئي (XLSX)",
 	"expirationDate": "تاريخ الانتهاء",
-	"expirationDateIsInThePastWarning": "تاريخ الانتهاء المُدخل يقع في الماضي"
+	"expirationDateIsInThePastWarning": "تاريخ الانتهاء المُدخل يقع في الماضي",
+	"expiryDateCannotBeInThePast": "لا يمكن أن يكون تاريخ الانتهاء في الماضي",
+	"slugValidationError": "أحرف صغيرة وأرقام وشرطات فقط، بدون شرطات في البداية أو النهاية"
 }

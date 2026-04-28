@@ -1486,5 +1486,7 @@
 	"enrichFromEUVD": "Berig EUVD",
 	"syncCweCatalog": "Hent CWE",
 	"syncCweCatalogFailed": "CWE fejl",
-	"exportEcosystem": "økosystem-eksport (XLSX)"
+	"exportEcosystem": "økosystem-eksport (XLSX)",
+	"expiryDateCannotBeInThePast": "Udløbsdatoen må ikke ligge i fortiden",
+	"slugValidationError": "Kun små bogstaver, tal og bindestreger, ingen bindestreger i starten eller slutningen"
 }

@@ -1193,5 +1193,7 @@
 	"enrichFromEUVD": "Obohatit EUVD",
 	"syncCweCatalog": "Načíst CWE",
 	"syncCweCatalogFailed": "Chyba CWE",
-	"expirationDateIsInThePastWarning": "Zadané datum vypršení platnosti je v minulosti"
+	"expirationDateIsInThePastWarning": "Zadané datum vypršení platnosti je v minulosti",
+	"expiryDateCannotBeInThePast": "Datum vypršení platnosti nemůže být v minulosti",
+	"slugValidationError": "Pouze malá písmena, číslice a pomlčky, bez pomlček na začátku nebo konci"
 }

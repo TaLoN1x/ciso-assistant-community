@@ -11,8 +11,6 @@ from .views import (
     ResetPasswordConfirmView,
     ServiceAccountDetailView,
     ServiceAccountKeyDetailView,
-    ServiceAccountKeyFlatDetailView,
-    ServiceAccountKeyFlatListView,
     ServiceAccountKeyListView,
     ServiceAccountListView,
     SessionTokenView,
@@ -66,15 +64,5 @@ urlpatterns = [
         "service-accounts/<uuid:sa_pk>/keys/<int:key_pk>/",
         ServiceAccountKeyDetailView.as_view(),
         name="service-account-key-detail",
-    ),
-    path(
-        "service-account-keys/",
-        ServiceAccountKeyFlatListView.as_view(),
-        name="service-account-keys-flat",
-    ),
-    path(
-        "service-account-keys/<int:pk>/",
-        ServiceAccountKeyFlatDetailView.as_view(),
-        name="service-account-key-flat-detail",
     ),
 ]

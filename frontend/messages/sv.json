@@ -1196,5 +1196,7 @@
 	"syncCweCatalog": "Hämta CWE",
 	"syncCweCatalogFailed": "CWE fel",
 	"expirationDate": "Utgångsdatum",
-	"expirationDateIsInThePastWarning": "Det angivna utgångsdatumet ligger i det förflutna"
+	"expirationDateIsInThePastWarning": "Det angivna utgångsdatumet ligger i det förflutna",
+	"expiryDateCannotBeInThePast": "Utgångsdatumet kan inte vara i det förflutna",
+	"slugValidationError": "Enbart gemener, siffror och bindestreck, inga inledande/avslutande bindestreck"
 }

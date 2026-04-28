@@ -1173,5 +1173,7 @@
 	"enrichFromEUVD": "EUVD سے افزودگی",
 	"syncCweCatalog": "CWE حاصل کریں",
 	"syncCweCatalogFailed": "CWE خرابی",
-	"expirationDateIsInThePastWarning": "درج کی گئی میعاد ختم کی تاریخ ماضی میں ہے"
+	"expirationDateIsInThePastWarning": "درج کی گئی میعاد ختم کی تاریخ ماضی میں ہے",
+	"expiryDateCannotBeInThePast": "میعاد ختم ہونے کی تاریخ ماضی میں نہیں ہو سکتی",
+	"slugValidationError": "صرف چھوٹے حروف، اعداد اور ہائفن، شروع یا آخر میں ہائفن نہیں"
 }

@@ -1202,5 +1202,7 @@
 	"enrichFromEUVD": "Îmbogățire EUVD",
 	"syncCweCatalog": "Preluare CWE",
 	"syncCweCatalogFailed": "Eroare CWE",
-	"expirationDateIsInThePastWarning": "Data expirării introdusă este în trecut"
+	"expirationDateIsInThePastWarning": "Data expirării introdusă este în trecut",
+	"expiryDateCannotBeInThePast": "Data de expirare nu poate fi în trecut",
+	"slugValidationError": "Doar litere mici, cifre și cratime, fără cratime la început sau la sfârșit"
 }

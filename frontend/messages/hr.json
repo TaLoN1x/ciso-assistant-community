@@ -3718,5 +3718,7 @@
 	"noExpiry": "Ostavite prazno za bez isteka.",
 	"keyName": "Naziv ključa",
 	"keyNameHelpText": "npr. \"primarni\" ili \"ci-pipeline\"",
-	"tokenWarning": "Kopirajte ovaj token sada — neće biti prikazan ponovo."
+	"tokenWarning": "Kopirajte ovaj token sada — neće biti prikazan ponovo.",
+	"expiryDateCannotBeInThePast": "Datum isteka ne može biti u prošlosti",
+	"slugValidationError": "Samo mala slova, brojevi i crtice, bez crtica na početku ili kraju"
 }

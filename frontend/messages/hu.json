@@ -1205,5 +1205,7 @@
 	"noExpiry": "Hagyja üresen a lejárat nélküli beállításhoz.",
 	"keyName": "Kulcs neve",
 	"keyNameHelpText": "pl. \"elsődleges\" vagy \"ci-pipeline\"",
-	"tokenWarning": "Másolja le ezt a tokent most — többet nem jelenik meg."
+	"tokenWarning": "Másolja le ezt a tokent most — többet nem jelenik meg.",
+	"expiryDateCannotBeInThePast": "A lejárati dátum nem lehet a múltban",
+	"slugValidationError": "Csak kisbetűk, számjegyek és kötőjelek, vezető/záró kötőjel nélkül"
 }

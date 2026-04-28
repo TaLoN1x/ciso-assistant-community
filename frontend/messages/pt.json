@@ -1204,5 +1204,7 @@
 	"enrichFromEUVD": "Enriquecer EUVD",
 	"syncCweCatalog": "Obter CWE",
 	"syncCweCatalogFailed": "Erro CWE",
-	"expirationDateIsInThePastWarning": "A data de expiração informada está no passado"
+	"expirationDateIsInThePastWarning": "A data de expiração informada está no passado",
+	"expiryDateCannotBeInThePast": "A data de expiração não pode estar no passado",
+	"slugValidationError": "Apenas letras minúsculas, números e hífens, sem hífens no início ou no fim"
 }

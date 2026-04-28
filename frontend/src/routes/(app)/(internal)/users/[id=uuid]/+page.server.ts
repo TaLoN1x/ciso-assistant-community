@@ -5,6 +5,7 @@ import { loadDetail } from '$lib/utils/load';
 import { ServiceAccountKeyCreateSchema } from '$lib/utils/schemas';
 import { safeTranslate } from '$lib/utils/i18n';
 import { type Actions, fail } from '@sveltejs/kit';
+import { z } from 'zod';
 import { message, superValidate } from 'sveltekit-superforms';
 import { zod4 as zod } from 'sveltekit-superforms/adapters';
 import type { PageServerLoad } from './$types';
@@ -16,6 +17,19 @@ export const load: PageServerLoad = async (event) => {
 
 export const actions: Actions = {
 	delete: async (event) => {
+		const formData = await event.request.clone().formData();
+		if (formData.get('urlmodel') === 'service-account-keys') {
+			const keyId = formData.get('id');
+			const res = await event.fetch(
+				`${BASE_API_URL}/iam/service-accounts/${event.params.id}/keys/${keyId}/`,
+				{ method: 'DELETE' }
+			);
+			const deleteForm = await superValidate(
+				{ id: String(keyId) },
+				zod(z.object({ id: z.string() }))
+			);
+			return message(deleteForm, { status: res.status });
+		}
 		return nestedDeleteFormAction({ event });
 	},
 	create: async (event) => {

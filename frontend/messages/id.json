@@ -1390,5 +1390,7 @@
 	"enrichFromEUVD": "Perkaya EUVD",
 	"syncCweCatalog": "Ambil CWE",
 	"syncCweCatalogFailed": "Gagal CWE",
-	"expirationDateIsInThePastWarning": "Tanggal kedaluwarsa yang dimasukkan berada di masa lalu"
+	"expirationDateIsInThePastWarning": "Tanggal kedaluwarsa yang dimasukkan berada di masa lalu",
+	"expiryDateCannotBeInThePast": "Tanggal kedaluwarsa tidak boleh di masa lalu",
+	"slugValidationError": "Hanya huruf kecil, angka, dan tanda hubung, tanpa tanda hubung di awal atau akhir"
 }

@@ -594,7 +594,10 @@ class ServiceAccountKeyListView(views.APIView):
         keys = PersonalAccessToken.objects.filter(auth_token__user=sa).order_by(
             "auth_token__created"
         )
-        return Response(ServiceAccountKeyReadSerializer(keys, many=True).data)
+        paginator = CustomLimitOffsetPagination()
+        page = paginator.paginate_queryset(keys, request)
+        serializer = ServiceAccountKeyReadSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
     def post(self, request, sa_pk):
         sa = self._get_sa(sa_pk)
@@ -681,123 +684,6 @@ class ServiceAccountKeyDetailView(views.APIView):
 
     def delete(self, request, sa_pk, key_pk):
         key = self._get_key(sa_pk, key_pk)
-        if key is None:
-            return Response({"error": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        sa_email = key.auth_token.user.email
-        key_name = key.name
-        key.auth_token.delete()  # cascades to PersonalAccessToken
-        logger.info(
-            "service account key revoked",
-            sa=sa_email,
-            key=key_name,
-            by=request.user.email,
-        )
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-class ServiceAccountKeyFlatListView(views.APIView):
-    """Flat endpoint: GET /iam/service-account-keys/?service_account=<uuid>, POST to create."""
-
-    permission_classes = [permissions.IsAuthenticated, IsAdministrator]
-
-    def get(self, request):
-        sa_id = request.query_params.get("service_account")
-        qs = PersonalAccessToken.objects.select_related("auth_token__user").filter(
-            auth_token__user__is_service_account=True
-        )
-        if sa_id:
-            qs = qs.filter(auth_token__user__pk=sa_id)
-        paginator = CustomLimitOffsetPagination()
-        page = paginator.paginate_queryset(qs.order_by("auth_token__created"), request)
-        serializer = ServiceAccountKeyReadSerializer(page, many=True)
-        return paginator.get_paginated_response(serializer.data)
-
-    def post(self, request):
-        serializer = ServiceAccountKeyCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        sa = serializer.validated_data["service_account"]
-
-        with transaction.atomic():
-            locked_sa = User.objects.select_for_update().get(pk=sa.pk)
-            active_count = PersonalAccessToken.objects.filter(
-                auth_token__user=locked_sa,
-                auth_token__expiry__gt=timezone.now(),
-            ).count()
-            if active_count >= User.SA_KEY_LIMIT:
-                return Response(
-                    {
-                        "error": f"Service account already has {User.SA_KEY_LIMIT} active keys. Revoke one first."
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            expiry_days = serializer.validated_data["expiry_days"]
-            auth_token_instance, token_value = get_token_model().objects.create(
-                user=locked_sa, expiry=timedelta(days=expiry_days)
-            )
-            key = PersonalAccessToken.objects.create(
-                auth_token=auth_token_instance,
-                name=serializer.validated_data["name"],
-            )
-        logger.info(
-            "service account key created",
-            sa=sa.email,
-            key=key.name,
-            by=request.user.email,
-        )
-        data = ServiceAccountKeyReadSerializer(key).data
-        data["token"] = token_value
-        return Response(data, status=status.HTTP_201_CREATED)
-
-
-class ServiceAccountKeyFlatDetailView(views.APIView):
-    """Flat detail: GET/PATCH/DELETE /iam/service-account-keys/<int:pk>/"""
-
-    permission_classes = [permissions.IsAuthenticated, IsAdministrator]
-
-    def _get_key(self, pk):
-        try:
-            return PersonalAccessToken.objects.select_related("auth_token__user").get(
-                pk=pk, auth_token__user__is_service_account=True
-            )
-        except PersonalAccessToken.DoesNotExist:
-            return None
-
-    def get(self, request, pk):
-        key = self._get_key(pk)
-        if key is None:
-            return Response({"error": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        return Response(ServiceAccountKeyReadSerializer(key).data)
-
-    def patch(self, request, pk):
-        key = self._get_key(pk)
-        if key is None:
-            return Response({"error": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        updated = []
-        if "name" in request.data:
-            new_name = request.data["name"]
-            if (
-                new_name != key.name
-                and PersonalAccessToken.objects.filter(
-                    auth_token__user=key.auth_token.user, name=new_name
-                ).exists()
-            ):
-                return Response(
-                    {
-                        "name": "A key with this name already exists for this service account."
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            key.name = new_name
-            updated.append("name")
-        if updated:
-            key.save(update_fields=updated)
-        return Response(ServiceAccountKeyReadSerializer(key).data)
-
-    def put(self, request, pk):
-        return self.patch(request, pk)
-
-    def delete(self, request, pk):
-        key = self._get_key(pk)
         if key is None:
             return Response({"error": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         sa_email = key.auth_token.user.email

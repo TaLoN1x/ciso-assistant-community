@@ -3091,5 +3091,7 @@
 	"noExpiry": "Leeglaten voor geen vervaldatum.",
 	"keyName": "Sleutelnaam",
 	"keyNameHelpText": "bijv. \"primair\" of \"ci-pipeline\"",
-	"tokenWarning": "Kopieer dit token nu — het wordt niet meer weergegeven."
+	"tokenWarning": "Kopieer dit token nu — het wordt niet meer weergegeven.",
+	"expiryDateCannotBeInThePast": "De vervaldatum mag niet in het verleden liggen",
+	"slugValidationError": "Alleen kleine letters, cijfers en koppeltekens, geen koppelteken aan het begin of einde"
 }

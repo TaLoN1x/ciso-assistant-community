@@ -4181,5 +4181,7 @@
 	"noExpiry": "Palikite tuščią, kad nebūtų galiojimo laiko.",
 	"keyName": "Rakto pavadinimas",
 	"keyNameHelpText": "pvz. \"pagrindinis\" arba \"ci-pipeline\"",
-	"tokenWarning": "Nukopijuokite šį žetoną dabar — jis nebebus rodomas."
+	"tokenWarning": "Nukopijuokite šį žetoną dabar — jis nebebus rodomas.",
+	"expiryDateCannotBeInThePast": "Galiojimo pabaigos data negali būti praeityje",
+	"slugValidationError": "Tik mažosios raidės, skaitmenys ir brūkšneliai, be brūkšnelių pradžioje ar pabaigoje"
 }

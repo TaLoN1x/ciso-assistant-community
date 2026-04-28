@@ -4043,6 +4043,8 @@
 	"noExpiry": "Leave empty for no expiry.",
 	"keyName": "Key name",
 	"keyNameHelpText": "e.g. \"primary\" or \"ci-pipeline\"",
+	"expiryDateCannotBeInThePast": "Expiry date cannot be in the past",
+	"slugValidationError": "Lowercase alphanumeric and hyphens only, no leading/trailing hyphens",
 	"tokenWarning": "Copy this token now — it will not be shown again.",
 	"teamEmail": "Team Email",
 	"leader": "Leader",

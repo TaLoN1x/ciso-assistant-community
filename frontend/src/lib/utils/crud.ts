@@ -838,14 +838,14 @@ export const URL_MODEL_MAP: ModelMap = {
 		filters: []
 	},
 	'service-account-keys': {
-		endpointUrl: 'iam/service-account-keys',
 		name: 'personalaccesstoken',
 		localName: 'serviceAccountKey',
 		localNamePlural: 'serviceAccountKeys',
 		verboseName: 'API key',
 		verboseNamePlural: 'API keys',
 		foreignKeyFields: [],
-		filters: []
+		filters: [],
+		disableEdit: true
 	},
 	'service-accounts': {
 		endpointUrl: 'iam/service-accounts',

@@ -3895,5 +3895,7 @@
 	"noExpiry": "만료 없이 비워두세요.",
 	"keyName": "키 이름",
 	"keyNameHelpText": "예: \"primary\" 또는 \"ci-pipeline\"",
-	"tokenWarning": "이 토큰을 지금 복사하세요 — 다시 표시되지 않습니다."
+	"tokenWarning": "이 토큰을 지금 복사하세요 — 다시 표시되지 않습니다.",
+	"expiryDateCannotBeInThePast": "만료일은 과거일 수 없습니다",
+	"slugValidationError": "소문자, 숫자 및 하이픈만 허용, 앞뒤 하이픈 불가"
 }

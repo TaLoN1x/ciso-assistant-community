@@ -1941,5 +1941,7 @@
 	"enrichFromEUVD": "EUVD'den zenginleştir",
 	"syncCweCatalog": "CWE çek",
 	"syncCweCatalogFailed": "CWE hatası",
-	"exportEcosystem": "ekosistem dışa aktarımı (XLSX)"
+	"exportEcosystem": "ekosistem dışa aktarımı (XLSX)",
+	"expiryDateCannotBeInThePast": "Son kullanma tarihi geçmişte olamaz",
+	"slugValidationError": "Yalnızca küçük harf, rakam ve kısa çizgi, başında veya sonunda kısa çizgi olmamalı"
 }

@@ -456,7 +456,7 @@ export const UserEditSchema = z.object({
 				return expiryDate >= today;
 			},
 			{
-				message: 'Expiry date cannot be in the past'
+				message: m.expiryDateCannotBeInThePast()
 			}
 		)
 });
@@ -476,7 +476,7 @@ export const UserCreateSchema = z.object({
 				return expiryDate >= today;
 			},
 			{
-				message: 'Expiry date cannot be in the past'
+				message: m.expiryDateCannotBeInThePast()
 			}
 		)
 });
@@ -1507,7 +1507,7 @@ const _saExpiryDate = z
 			today.setHours(0, 0, 0, 0);
 			return expiryDate >= today;
 		},
-		{ message: 'Expiry date cannot be in the past' }
+		{ message: m.expiryDateCannotBeInThePast() }
 	);
 
 export const ServiceAccountCreateSchema = z.object({
@@ -1516,7 +1516,7 @@ export const ServiceAccountCreateSchema = z.object({
 		.min(1)
 		.max(64)
 		.regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/, {
-			message: 'Lowercase alphanumeric and hyphens only, no leading/trailing hyphens'
+			message: m.slugValidationError()
 		}),
 	description: z.string().max(500).optional().default(''),
 	expiry_date: _saExpiryDate
@@ -1531,10 +1531,6 @@ export const ServiceAccountKeyCreateSchema = z.object({
 	service_account: z.string().uuid().optional(),
 	name: z.string().min(1).max(64),
 	expiry_days: z.number().int().min(1).max(365).default(30)
-});
-
-export const ServiceAccountKeyUpdateSchema = z.object({
-	name: z.string().min(1).max(64).optional()
 });
 
 export const ElementaryActionSchema = z.object({

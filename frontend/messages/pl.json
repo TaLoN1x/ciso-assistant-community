@@ -1948,5 +1948,7 @@
 	"noExpiry": "Pozostaw puste dla braku wygaśnięcia.",
 	"keyName": "Nazwa klucza",
 	"keyNameHelpText": "np. \"główny\" lub \"ci-pipeline\"",
-	"tokenWarning": "Skopiuj ten token teraz — nie zostanie ponownie wyświetlony."
+	"tokenWarning": "Skopiuj ten token teraz — nie zostanie ponownie wyświetlony.",
+	"expiryDateCannotBeInThePast": "Data wygaśnięcia nie może być w przeszłości",
+	"slugValidationError": "Tylko małe litery, cyfry i myślniki, bez myślników na początku lub końcu"
 }

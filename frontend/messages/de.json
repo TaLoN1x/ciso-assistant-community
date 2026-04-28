@@ -3086,5 +3086,7 @@
 	"enrichFromEUVD": "Aus EUVD anreichern",
 	"syncCweCatalog": "CWE abrufen",
 	"syncCweCatalogFailed": "CWE Fehler",
-	"exportEcosystem": "Ökosystem-Export (XLSX)"
+	"exportEcosystem": "Ökosystem-Export (XLSX)",
+	"expiryDateCannotBeInThePast": "Das Ablaufdatum darf nicht in der Vergangenheit liegen",
+	"slugValidationError": "Nur Kleinbuchstaben, Ziffern und Bindestriche, keine führenden/abschließenden Bindestriche"
 }

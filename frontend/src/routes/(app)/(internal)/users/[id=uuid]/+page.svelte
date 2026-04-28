@@ -87,6 +87,7 @@
 							URLModel={urlmodel}
 							baseEndpoint="/{urlmodel}?service_account={data.data.id}"
 							disableView={true}
+							disableEdit={true}
 						>
 							{#snippet optButton()}
 								{#if user?.is_admin}

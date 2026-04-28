@@ -1174,5 +1174,7 @@
 	"enrichFromEUVD": "EUVD से समृद्ध करें",
 	"syncCweCatalog": "CWE प्राप्त करें",
 	"syncCweCatalogFailed": "CWE त्रुटि",
-	"expirationDateIsInThePastWarning": "दर्ज की गई समाप्ति तिथि अतीत में है"
+	"expirationDateIsInThePastWarning": "दर्ज की गई समाप्ति तिथि अतीत में है",
+	"expiryDateCannotBeInThePast": "समाप्ति तिथि अतीत में नहीं हो सकती",
+	"slugValidationError": "केवल छोटे अक्षर, अंक और हाइफन, शुरुआत या अंत में हाइफन नहीं"
 }

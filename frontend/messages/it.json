@@ -2440,5 +2440,7 @@
 	"noExpiry": "Lasciare vuoto per nessuna scadenza.",
 	"keyName": "Nome chiave",
 	"keyNameHelpText": "es. \"primaria\" o \"ci-pipeline\"",
-	"tokenWarning": "Copia questo token ora — non verrà mostrato di nuovo."
+	"tokenWarning": "Copia questo token ora — non verrà mostrato di nuovo.",
+	"expiryDateCannotBeInThePast": "La data di scadenza non può essere nel passato",
+	"slugValidationError": "Solo lettere minuscole, cifre e trattini, senza trattini iniziali o finali"
 }

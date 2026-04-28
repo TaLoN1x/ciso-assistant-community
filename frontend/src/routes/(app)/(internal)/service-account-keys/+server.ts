@@ -1,12 +1,16 @@
 import { BASE_API_URL } from '$lib/utils/constants';
-import { getModelInfo } from '$lib/utils/crud';
 import { error, type NumericRange } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ fetch, url }) => {
-	const model = getModelInfo('service-account-keys');
-	const qs = url.searchParams.toString();
-	const endpoint = `${BASE_API_URL}/${model.endpointUrl}/${qs ? '?' + qs : ''}`;
+	const saId = url.searchParams.get('service_account');
+	if (!saId) {
+		error(400, { message: 'service_account query param is required' });
+	}
+	const remaining = new URLSearchParams(url.searchParams);
+	remaining.delete('service_account');
+	const qs = remaining.toString();
+	const endpoint = `${BASE_API_URL}/iam/service-accounts/${saId}/keys/${qs ? '?' + qs : ''}`;
 
 	const res = await fetch(endpoint);
 	if (!res.ok) {

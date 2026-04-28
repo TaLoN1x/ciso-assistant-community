@@ -3239,5 +3239,7 @@
 	"enrichFromEUVD": "从EUVD丰富",
 	"syncCweCatalog": "拉取CWE",
 	"syncCweCatalogFailed": "CWE失败",
-	"exportEcosystem": "生态系统导出 (XLSX)"
+	"exportEcosystem": "生态系统导出 (XLSX)",
+	"expiryDateCannotBeInThePast": "到期日期不能是过去的日期",
+	"slugValidationError": "仅限小写字母、数字和连字符，不能以连字符开头或结尾"
 }
