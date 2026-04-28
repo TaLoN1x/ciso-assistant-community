@@ -59,6 +59,7 @@
 
 * [Prerequisites](deployment/prerequisites.md)
 * [Local](deployment/local.md)
+* [Docker rootless configuration](deployment/docker-rootless-configuration.md)
 * [Remote/Virtualization](deployment/remote-virtualization.md)
 * [Deploy on a VPS](deployment/deploy-on-a-vps.md)
 * [Custom certificates](deployment/custom-certificates.md)
