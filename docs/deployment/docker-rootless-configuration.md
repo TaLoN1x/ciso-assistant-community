@@ -83,14 +83,12 @@ In the case you do not want to have rootless Docker&#x20;
 docker compose down
 ```
 
-Then update manually your docker-compose.yml on the images version you want (ex: v3.16). <mark style="color:$primary;">Ignore this step if you use latest image</mark>
+Then manually update your docker-compose.yml on the images version you want (ex: v3.16). <mark style="color:$primary;">Ignore this step if you use latest image</mark>
 
 ```
-    image: ghcr.io/intuitem/ciso-assistant-community/frontend:v3.15.2
-    
-    #to (for example)
-    
-    image: ghcr.io/intuitem/ciso-assistant-community/frontend:v3.16 
+image: ghcr.io/intuitem/ciso-assistant-community/frontend:v3.15.2
+# replace with (for example)
+image: ghcr.io/intuitem/ciso-assistant-community/frontend:v3.16
 ```
 
 ```
