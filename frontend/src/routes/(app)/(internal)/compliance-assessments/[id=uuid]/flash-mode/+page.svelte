@@ -5,6 +5,7 @@
 	import { m } from '$paraglide/messages';
 	import type { PageData } from './$types';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+	import RequirementLabel from '$lib/components/RequirementLabel.svelte';
 	import { getFieldVisibility } from '$lib/utils/helpers';
 
 	interface Props {
@@ -95,12 +96,12 @@
 		requirement?.parent_urn ? (requirementsByUrn[requirement.parent_urn] ?? null) : null
 	);
 
-	let title = $derived(
+	let titleParts = $derived(
 		requirement?.display_short
-			? requirement.display_short
+			? { ref_id: requirement.ref_id ?? '', name: requirement.name ?? '' }
 			: parent?.display_short
-				? parent.display_short
-				: (parent?.description ?? '')
+				? { ref_id: parent.ref_id ?? '', name: parent.name ?? '' }
+				: { ref_id: '', name: parent?.description ?? '' }
 	);
 
 	// Progress tracking (only assessable items count)
@@ -385,7 +386,9 @@
 								<MarkdownRenderer content={currentSplashNode.description} />
 							</div>
 						{:else if currentRequirementAssessment}
-							<div class="content-section-label">{title}</div>
+							<div class="content-section-label">
+								<RequirementLabel ref_id={titleParts.ref_id} name={titleParts.name} />
+							</div>
 
 							{#if currentRequirementAssessment.description}
 								<div class="content-description">

@@ -7,6 +7,7 @@
 	import RadioGroup from '$lib/components/Forms/RadioGroup.svelte';
 	import Score from '$lib/components/Forms/Score.svelte';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+	import RequirementLabel from '$lib/components/RequirementLabel.svelte';
 	import SplashCard from '$lib/components/FrameworkBuilder/SplashCard.svelte';
 	import TableMarkdownField from '$lib/components/Forms/TableMarkdownField.svelte';
 	import CreateModal from '$lib/components/Modals/CreateModal.svelte';
@@ -122,6 +123,17 @@
 		const result = requirement.display_short ? requirement.display_short : (requirement.name ?? '');
 		titleMap.set(requirementAssessment.id, result);
 		return result;
+	}
+
+	function getTitleParts(requirementAssessment: Record<string, any>) {
+		const entry = requirementHashmap[requirementAssessment.requirement] ?? requirementAssessment;
+		// On RequirementAssessment entries, top-level `name` is the precomposed
+		// display_short (via __str__). Prefer the nested `requirement` raw fields.
+		const node = entry.requirement ?? entry;
+		return {
+			ref_id: node.ref_id ?? '',
+			name: node.name ?? ''
+		};
 	}
 
 	// Function to update requirement assessments, the data argument contain fields as keys and the associated values as values.
@@ -438,6 +450,7 @@
 							/>
 						</div>
 					{:else}
+						{@const titleParts = getTitleParts(requirementAssessment)}
 						<span
 							class="relative flex justify-center py-4"
 							id="requirement-{requirementAssessment.id}"
@@ -450,7 +463,7 @@
 							></div>
 
 							<span class="relative z-10 bg-white px-6 text-orange-600 font-semibold text-xl">
-								{getTitle(requirementAssessment)}
+								<RequirementLabel ref_id={titleParts.ref_id} name={titleParts.name} />
 							</span>
 						</span>
 						<div class="h-2"></div>
