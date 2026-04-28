@@ -175,8 +175,12 @@ Unless marked as mandatory, ref\_id fields can be left blank but the column must
   * `in_prod`
   * `eol`
   * `dropped`
+* default\_assignee
+  * User email or team name, semicolon-separated
 
+### Special considerations
 
+* If the default\_assignee column is present and  empty, the import would end up cleaning existing assignee.
 
 ## 📃 Audits
 
