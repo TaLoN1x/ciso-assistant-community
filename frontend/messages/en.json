@@ -4277,6 +4277,8 @@
 	"noItemsToDisplayAdjustFilters": "No items to display. Adjust your filters or add dates to your objects.",
 	"failedToLoadTimelineData": "Failed to load timeline data. Please try again.",
 	"useCreationDateAsStart": "Use creation date as start",
+	"areYouAlignedWithThisRequirement": "Are you aligned with this requirement?",
+	"respondentAnswered": "Respondent answered",
 	"custom": "Custom",
 	"selectADashboard": "Select a dashboard",
 	"noDashboardsAvailable": "No dashboards available",
