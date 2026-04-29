@@ -1267,27 +1267,33 @@ class LibraryUpdater:
                             if ra not in requirement_assessment_objects_to_update:
                                 requirement_assessment_objects_to_update.append(ra)
 
-                    # update threats linked to the requirement_node
-                    for threat_urn in requirement_node.get("threats", []):
-                        normalized_threat_urn = threat_urn.lower()
-                        threat_object = (
-                            objects_tracked.get(normalized_threat_urn)
-                            or Threat.objects.filter(urn=normalized_threat_urn).first()
-                        )
-                        if threat_object:
-                            requirement_node_object.threats.add(threat_object)
+                    new_threats_urns = {
+                        urn.lower() # URNs are case-insensitive
+                        for urn in requirement_node.get("threats", [])
+                    }
+                    new_threats = [
+                        objects_tracked.get(urn)
+                        for urn in new_threats_urns
+                    ]
+                    if any(threat is None for threat in new_threats):
+                        # Edge case fix in case we ever have a threat missing from objects_tracked
+                        new_threats = Threat.objects.filter(urn__in=new_threats_urns)
 
-                    # update reference_controls linked to the requirement_node
-                    for rc_urn in requirement_node.get("reference_controls", []):
-                        normalized_rc_urn = rc_urn.lower()
-                        rc_object = (
-                            objects_tracked.get(normalized_rc_urn)
-                            or ReferenceControl.objects.filter(
-                                urn=normalized_rc_urn
-                            ).first()
-                        )
-                        if rc_object:
-                            requirement_node_object.reference_controls.add(rc_object)
+                    requirement_node_object.threats.set(new_threats)
+
+                    new_reference_controls_urns = {
+                        urn.lower() # URNs are case-insensitive
+                        for urn in requirement_node.get("reference_controls", [])
+                    }
+                    new_reference_controls = [
+                        objects_tracked.get(urn)
+                        for urn in new_reference_controls_urns
+                    ]
+                    if any(reference_control is None for reference_control in new_reference_controls):
+                        # Edge case fix in case we ever have a reference_control missing from objects_tracked
+                        new_reference_controls = ReferenceControl.objects.filter(urn__in=new_reference_controls_urns)
+
+                    requirement_node_object.reference_controls.set(new_reference_controls)
 
                 # Fix for the dual bulk_update issue - consolidate into one update
                 if requirement_node_objects_to_update:
