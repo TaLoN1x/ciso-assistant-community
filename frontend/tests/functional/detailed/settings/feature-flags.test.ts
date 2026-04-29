@@ -5,37 +5,15 @@ const vars = TestContent.generateTestVars();
 
 const sidebar = (page: Page) => page.getByTestId('sidebar');
 
-/**
- * Navigate to /settings and open the Feature Flags tab.
- * Supports both:
- *   - skeleton v4 (community): Tabs.Trigger renders data-value="featureFlags"
- *   - skeleton v2 (enterprise): <Tab name="featureFlags" value={2}>
- */
 const gotoFeatureFlags = async (page: Page) => {
 	await page.goto('/settings');
 	await page.waitForLoadState('networkidle');
 
-	// Detect skeleton version: v4 uses data-value, v2 uses name attribute on radio input
-	const tabV4 = page.locator('[data-value="featureFlags"]');
-	const isV4 = (await tabV4.count()) > 0;
+	const tab = page.getByRole('tab', { name: /feature flags/i });
+	await expect(tab).toBeVisible();
+	await tab.click();
 
-	if (isV4) {
-		// skeleton v4 (community): wait for SSR hydration then click
-		await expect(tabV4).toBeVisible();
-		await expect(tabV4).not.toHaveAttribute('data-ssr');
-		await tabV4.click();
-		await page.waitForTimeout(500);
-		await expect(
-			page.locator('[id$="content-featureFlags"] [role="checkbox"]').first()
-		).toBeVisible();
-	} else {
-		// skeleton v2 (enterprise): Tab is a radio input — click it directly
-		const tabV2 = page.locator('[name="featureFlags"]');
-		await expect(tabV2).toBeVisible();
-		await tabV2.click();
-		await page.waitForTimeout(300);
-		await expect(page.locator('[role="checkbox"]').first()).toBeVisible();
-	}
+	await expect(page.locator('[role="checkbox"]').first()).toBeVisible();
 };
 
 /** Enable or disable a feature flag by its label, then save. */
