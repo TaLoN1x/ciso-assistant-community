@@ -17028,11 +17028,18 @@ def metrics_view(request):
         created_at_gauge.set(metrics.get("created_at", 0))
         last_login_gauge.set(metrics.get("last_login", 0))
     except Exception as e:
-        return HttpResponse(f"# Error collecting metrics: {e}\n", status=500, content_type="text/plain")
+        logger.warning(f"# Error collecting metrics: {e}\n", exc_info=True)
+        return HttpResponse(
+            "Error collecting metrics", status=500, content_type="text/plain"
+        )
 
-    output = "\n".join(
-        line for line in generate_latest().decode("utf-8").splitlines()
-        if not line.startswith(("# HELP", "# TYPE"))
-    ) + "\n"
+    output = (
+        "\n".join(
+            line
+            for line in generate_latest().decode("utf-8").splitlines()
+            if not line.startswith(("# HELP", "# TYPE"))
+        )
+        + "\n"
+    )
 
     return HttpResponse(output, content_type=CONTENT_TYPE_LATEST)

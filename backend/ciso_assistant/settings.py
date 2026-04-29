@@ -154,8 +154,12 @@ LOCAL_STORAGE_DIRECTORY = os.environ.get(
     "LOCAL_STORAGE_DIRECTORY", BASE_DIR / "db/attachments"
 )
 
-METRICS_ENDPOINT_MODE = os.environ.get("METRICS_ENDPOINT_MODE", "False").lower() in ("true", "1", "yes")
-logger.info("METRICS_ENDPOINT_MODE: %s", METRICS_ENDPOINT_MODE)
+EXPOSE_METRICS = os.environ.get("EXPOSE_METRICS", "False").lower() in (
+    "true",
+    "1",
+    "yes",
+)
+logger.info("EXPOSE_METRICS: %s", EXPOSE_METRICS)
 
 ATTACHMENT_MAX_SIZE_MB = os.environ.get("ATTACHMENT_MAX_SIZE_MB", 25)
 
