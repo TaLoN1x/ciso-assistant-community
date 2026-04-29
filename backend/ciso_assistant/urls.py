@@ -43,7 +43,7 @@ urlpatterns = [
     path("i18n/", include("django.conf.urls.i18n")),
 ]
 
-if settings.EXPOSE_METRICS:
+if getattr(settings, "EXPOSE_METRICS", False):
     from core.views import metrics_view
 
     urlpatterns.append(path("metrics/", metrics_view, name="metrics"))
