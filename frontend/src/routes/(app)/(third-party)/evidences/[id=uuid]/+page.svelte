@@ -72,6 +72,16 @@
 
 <DetailView {data} />
 
+<div class="mt-4 flex justify-end">
+	<a
+		href={`/evidences/${data.data.id}/new-revision`}
+		class="btn preset-filled-primary-500"
+		data-testid="new-revision-button"
+	>
+		<i class="fa-solid fa-plus mr-2"></i>New revision
+	</a>
+</div>
+
 {#if data.data.attachment}
 	<div class="card mt-8 px-6 py-4 bg-white flex flex-col shadow-lg space-y-4">
 		<div class="flex flex-row justify-between">

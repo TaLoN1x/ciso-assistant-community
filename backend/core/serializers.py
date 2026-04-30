@@ -2376,7 +2376,17 @@ class EvidenceRevisionWriteSerializer(BaseModelSerializer):
 
         evidence.status = validated_data["status"]
         evidence.save(update_fields=["status"])
-        return super().create(validated_data)
+        revision = super().create(validated_data)
+        # Bridge: if the legacy single-attachment field was set, mirror it
+        # into an EvidenceFile so the new files[] view shows it.
+        if revision.attachment and not revision.files.exists():
+            EvidenceFile.objects.create(
+                revision=revision,
+                folder=revision.folder,
+                file=revision.attachment.name,
+                ordering=0,
+            )
+        return revision
 
 
 class EvidenceRevisionImportExportSerializer(BaseModelSerializer):
