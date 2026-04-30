@@ -21,8 +21,10 @@ KEYCLOAK_ADMIN_PASSWORD="admin"
 QUICK_MODE_ACTIVATED=1
 KEEP_DATABASE_SNAPSHOT=1
 
+DOCKER_BIN=$(command -v docker || true)
+
 # Check if user can run docker without sudo
-if docker info >/dev/null 2>&1; then
+if [[ -n "$DOCKER_BIN" ]] && "$DOCKER_BIN" info >/dev/null 2>&1; then
   DO_NOT_USE_SUDO=1
 fi
 
@@ -128,33 +130,26 @@ for PORT in $MAILER_WEB_SERVER_PORT $MAILER_SMTP_SERVER_PORT; do
 done
 
 cleanup() {
+  local exit_code="${1:-0}"
   echo -e "\nCleaning up..."
   if [[ -n "$BACKEND_PID" ]]; then
     kill $BACKEND_PID >/dev/null 2>&1
     echo "| backend server stopped"
   fi
   if [[ "$KEEP_DATABASE_SNAPSHOT" -ne 1 || ! -f "$DB_DIR/$DB_INIT_NAME" ]]; then
-    rm "$DB_DIR/$DB_INIT_NAME"
-    echo "| test initial database snapshot deleted"
+    if [[ -f "$DB_DIR/$DB_INIT_NAME" ]]; then
+      rm -f "$DB_DIR/$DB_INIT_NAME"
+      echo "| test initial database snapshot deleted"
+    fi
   fi
   if [[ -n "$MAILER_PID" ]]; then
-    if [[ -z "$DO_NOT_USE_SUDO" ]]; then
-      sudo docker stop "$MAILER_PID" &>/dev/null
-      sudo docker rm "$MAILER_PID" &>/dev/null
-    else
-      docker stop "$MAILER_PID" &>/dev/null
-      docker rm "$MAILER_PID" &>/dev/null
-    fi
+    docker_cmd stop "$MAILER_PID" &>/dev/null
+    docker_cmd rm "$MAILER_PID" &>/dev/null
     echo "| mailer service stopped"
   fi
   if [[ -n "$KEYCLOAK_PID" ]]; then
-    if [[ -z "$DO_NOT_USE_SUDO" ]]; then
-      sudo docker stop "$KEYCLOAK_PID" &>/dev/null
-      sudo docker rm "$KEYCLOAK_PID" &>/dev/null
-    else
-      docker stop "$KEYCLOAK_PID" &>/dev/null
-      docker rm "$KEYCLOAK_PID" &>/dev/null
-    fi
+    docker_cmd stop "$KEYCLOAK_PID" &>/dev/null
+    docker_cmd rm "$KEYCLOAK_PID" &>/dev/null
     echo "| keycloak service stopped"
   fi
   if [[ -d "$APP_DIR/frontend/tests/utils/.testhistory" ]]; then
@@ -164,7 +159,26 @@ cleanup() {
   # This must be at the end of the cleanup as the sudo command can block the script
   trap - SIGINT SIGTERM EXIT
   echo "Cleanup done"
-  exit 0
+  exit "$exit_code"
+}
+
+docker_cmd() {
+  if [[ -z "$DOCKER_BIN" ]]; then
+    return 127
+  fi
+
+  if [[ -z "$DO_NOT_USE_SUDO" ]]; then
+    sudo "$DOCKER_BIN" "$@"
+  else
+    "$DOCKER_BIN" "$@"
+  fi
+}
+
+docker_error_message() {
+  echo "Docker is not installed or cannot be started from this shell."
+  echo "Please install Docker and make sure it is available in PATH."
+  echo "For the mailer only, you can use -m to tell the tests to use an existing service."
+  echo "If Docker works without sudo, rerun with --no-sudo."
 }
 
 django_args() {
@@ -194,6 +208,14 @@ compute_frontend_hash() {
   fi
 }
 
+frontend_preview_manifest() {
+  if [[ -n "$ENTERPRISE" ]]; then
+    echo "$APP_DIR/enterprise/frontend/.build/frontend/.svelte-kit/output/server/manifest.js"
+  else
+    echo "$APP_DIR/frontend/.svelte-kit/output/server/manifest.js"
+  fi
+}
+
 run_tests() {
   if [[ -n "$ENTERPRISE" ]]; then
     echo "Running tests for the enterprise version..."
@@ -211,52 +233,61 @@ run_tests() {
 }
 
 finish() {
-  echo "Test successfully completed!"
-  cleanup
+  local exit_code=$?
+  if [[ "$exit_code" -eq 0 ]]; then
+    echo "Test successfully completed!"
+  else
+    echo "Test failed with exit code $exit_code"
+  fi
+  cleanup "$exit_code"
 }
 
-trap cleanup SIGINT SIGTERM
+trap 'cleanup 130' SIGINT
+trap 'cleanup 143' SIGTERM
 trap finish EXIT
 
 if [[ ! " ${SCRIPT_SHORT_ARGS[@]} " =~ " -m " ]]; then
-  if command -v docker &>/dev/null; then
+  if [[ -n "$DOCKER_BIN" ]]; then
     echo "Starting mailer service..."
-    if [[ -z "$DO_NOT_USE_SUDO" ]]; then
-      MAILER_PID=$(sudo docker run -d -p "$MAILER_SMTP_SERVER_PORT":1025 -p "$MAILER_WEB_SERVER_PORT":8025 mailhog/mailhog)
-    else
-      MAILER_PID=$(docker run -d -p "$MAILER_SMTP_SERVER_PORT":1025 -p "$MAILER_WEB_SERVER_PORT":8025 mailhog/mailhog)
+    if ! MAILER_PID=$(docker_cmd run -d -p "$MAILER_SMTP_SERVER_PORT":1025 -p "$MAILER_WEB_SERVER_PORT":8025 mailhog/mailhog); then
+      echo "Failed to start the mailer service."
+      docker_error_message
+      exit 1
+    fi
+    if [[ -z "$MAILER_PID" ]]; then
+      echo "Failed to start the mailer service: Docker returned an empty container id."
+      docker_error_message
+      exit 1
     fi
     echo "Mailer service started on ports $MAILER_SMTP_SERVER_PORT/$MAILER_WEB_SERVER_PORT (Container ID: ${MAILER_PID:0:6})"
   else
-    echo "Docker is not installed!"
-    echo "Please install Docker to use the isolated test mailer service or use -m to tell the tests to use an existing one."
+    docker_error_message
     exit 1
   fi
 else
   echo "Using an existing mailer service on ports $MAILER_SMTP_SERVER_PORT/$MAILER_WEB_SERVER_PORT"
 fi
 
-if command -v docker &>/dev/null; then
+if [[ -n "$DOCKER_BIN" ]]; then
   echo "Starting keycloak with admin user $KEYCLOAK_ADMIN:$KEYCLOAK_ADMIN_PASSWORD on port $KEYCLOAK_PORT..."
-  if [[ -z "$DO_NOT_USE_SUDO" ]]; then
-    KEYCLOAK_PID=$(sudo docker run -d -p "$KEYCLOAK_PORT":8080 \
-      -e KEYCLOAK_ADMIN="$KEYCLOAK_ADMIN" \
-      -e KEYCLOAK_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" \
-      -v "$APP_DIR"/frontend/tests/keycloak:/opt/keycloak/data/import \
-      quay.io/keycloak/keycloak:26.3.0 \
-      start-dev --import-realm)
-  else
-    KEYCLOAK_PID=$(docker run -d -p "$KEYCLOAK_PORT":8080 \
-      -e KEYCLOAK_ADMIN="$KEYCLOAK_ADMIN" \
-      -e KEYCLOAK_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" \
-      -v "$APP_DIR"/frontend/tests/keycloak:/opt/keycloak/data/import \
-      quay.io/keycloak/keycloak:26.3.0 \
-      start-dev --import-realm)
+  if ! KEYCLOAK_PID=$(docker_cmd run -d -p "$KEYCLOAK_PORT":8080 \
+    -e KEYCLOAK_ADMIN="$KEYCLOAK_ADMIN" \
+    -e KEYCLOAK_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" \
+    -v "$APP_DIR"/frontend/tests/keycloak:/opt/keycloak/data/import \
+    quay.io/keycloak/keycloak:26.3.0 \
+    start-dev --import-realm); then
+    echo "Failed to start keycloak."
+    docker_error_message
+    exit 1
+  fi
+  if [[ -z "$KEYCLOAK_PID" ]]; then
+    echo "Failed to start keycloak: Docker returned an empty container id."
+    docker_error_message
+    exit 1
   fi
   echo "Keycloak started on ports $KEYCLOAK_PORT (Container ID: ${KEYCLOAK_PID:0:6})"
 else
-  echo "Docker is not installed!"
-  echo "Please install Docker to use the isolated test mailer service or use -m to tell the tests to use an existing one."
+  docker_error_message
   exit 1
 fi
 
@@ -328,9 +359,17 @@ else
   FRONTEND_HASH_FILE="$APP_DIR/frontend/tests/.frontend_hash"
 fi
 FRONTEND_HASH=$(compute_frontend_hash)
+FRONTEND_PREVIEW_MANIFEST=$(frontend_preview_manifest)
+PREVIOUS_FRONTEND_HASH=""
+if [[ -f "$FRONTEND_HASH_FILE" ]]; then
+  PREVIOUS_FRONTEND_HASH=$(cat "$FRONTEND_HASH_FILE")
+fi
 
-if [ "$(cat "$FRONTEND_HASH_FILE")" != "$FRONTEND_HASH" ]; then
-  build_frontend # Required for the "pnpm run preview" command of playwright.config.ts
+if [[ "$PREVIOUS_FRONTEND_HASH" != "$FRONTEND_HASH" || ! -f "$FRONTEND_PREVIEW_MANIFEST" ]]; then
+  if ! build_frontend; then # Required for the "pnpm run preview" command of playwright.config.ts
+    echo "Frontend build failed."
+    exit 1
+  fi
   echo "$FRONTEND_HASH" >"$FRONTEND_HASH_FILE"
 fi
 
