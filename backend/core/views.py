@@ -1555,35 +1555,58 @@ class BaseModelViewSet(viewsets.ModelViewSet):
 
     def _get_optimized_object_data(self, queryset):
         """
-        Calculate folder full paths for objects in the queryset in 1 DB request.
+        Calculate folder full paths for objects in the queryset, reusing
+        the IAM snapshot cache instead of re-running `Folder.objects.all()`
+        on every list response. The snapshot already exposes a
+        folder_id → Folder map (with `name` loaded) and a parent_map; both
+        are kept in sync via Folder.save/delete invalidation.
+
+        Object-side accesses go through `*_id` columns rather than FK
+        attributes so this also works for callers that did not
+        `select_related("folder")` on their queryset.
         """
         initial_objects = list(queryset)
         if not initial_objects:
             return {}
 
+        from iam.cache_builders import get_folder_state
+
+        state = get_folder_state()
+        folders = state.folders
+        parent_map = state.parent_map
+
         path_results = {}
-        folders = {f.id: f for f in Folder.objects.all()}
         for obj in initial_objects:
-            path = []
-            if hasattr(obj, "folder"):
-                queue = deque([obj.folder.id])
-            elif hasattr(obj, "parent_folder") and obj.parent_folder:
-                queue = deque([obj.parent_folder.id])
+            if hasattr(obj, "folder_id"):
+                start_id = obj.folder_id
+            elif getattr(obj, "parent_folder_id", None):
+                start_id = obj.parent_folder_id
             else:
                 continue
+            if start_id is None:
+                continue
+
+            path = []
+            queue = deque([start_id])
             while queue:
                 folder_id = queue.popleft()
-                folder = folders[folder_id]
-                if folder.parent_folder:
+                folder = folders.get(folder_id)
+                if folder is None:
+                    # Cache may briefly miss a folder created in the same
+                    # request before invalidation propagates; bail rather
+                    # than KeyError so the response shape is preserved.
+                    continue
+                parent_id = parent_map.get(folder_id)
+                if parent_id is not None:
                     path.append(
                         {
                             "str": str(folder),
                             "id": folder.id,
-                            "parent_id": folder.parent_folder.id,
+                            "parent_id": parent_id,
                         }
                     )
-                    queue.append(folder.parent_folder.id)
-            path_results[obj.id] = path[::-1]  # Reverse to get root to leaf order
+                    queue.append(parent_id)
+            path_results[obj.id] = path[::-1]  # root → leaf order
 
         return {
             "paths": path_results,
