@@ -11175,41 +11175,77 @@ class ComplianceAssessmentViewSet(BaseModelViewSet):
         return super().get_serializer_class(**kwargs)
 
     def _get_optimized_object_data(self, queryset):
-        """Compute per-page requirement counts in one bounded GROUP BY,
-        replacing the Count(distinct=True) annotations dropped from the
-        list queryset. Bounded by `len(queryset)` (≤ page size), so the
-        cost is independent of the total RA table size.
+        """Compute per-page requirement counts in (at most) two bounded
+        queries, replacing both the Count(distinct=True) annotations
+        previously on the queryset and the unconditional
+        `requirement_assessments` prefetch on the list path.
 
-        Only the no-implementation-groups case is computed here; audits
-        with `selected_implementation_groups` still rely on the prefetched
-        `requirement_assessments` for in-Python IG filtering inside
-        `ComplianceAssessmentListSerializer.get_progress`.
+        - Audits without `selected_implementation_groups`: one GROUP BY
+          aggregates `total` / `assessed` via `Count(filter=Q())`.
+        - Audits with `selected_implementation_groups`: one fetch of
+          their requirement_assessments + requirement nodes, filtered
+          in Python by `selected_groups ∩ requirement.implementation_groups`.
+          Same logic the serializer used to walk on the prefetch.
+
+        Bounded by the page size, so cost is independent of the total
+        RA table size — and the common no-IG page now skips touching
+        the RA table altogether on the prefetch path.
         """
         optimized_data = super()._get_optimized_object_data(queryset)
-        audit_ids = [a.id for a in queryset]
-        if not audit_ids:
+        audits = list(queryset)
+        if not audits:
             return optimized_data
 
         not_assessed = RequirementAssessment.Result.NOT_ASSESSED
-        rows = (
-            RequirementAssessment.objects.filter(
-                compliance_assessment_id__in=audit_ids,
-                requirement__assessable=True,
-            )
-            .values("compliance_assessment_id")
-            .annotate(
-                total=Count("id"),
-                assessed=Count(
-                    "id",
-                    filter=~Q(result=not_assessed) | Q(score__isnull=False),
-                ),
-            )
-        )
+        ig_audits = [a for a in audits if a.selected_implementation_groups]
+        plain_ids = [
+            a.id for a in audits if not a.selected_implementation_groups
+        ]
+
         total_map: dict = {}
         assessed_map: dict = {}
-        for r in rows:
-            total_map[r["compliance_assessment_id"]] = r["total"]
-            assessed_map[r["compliance_assessment_id"]] = r["assessed"]
+
+        if plain_ids:
+            rows = (
+                RequirementAssessment.objects.filter(
+                    compliance_assessment_id__in=plain_ids,
+                    requirement__assessable=True,
+                )
+                .values("compliance_assessment_id")
+                .annotate(
+                    total=Count("id"),
+                    assessed=Count(
+                        "id",
+                        filter=~Q(result=not_assessed) | Q(score__isnull=False),
+                    ),
+                )
+            )
+            for r in rows:
+                total_map[r["compliance_assessment_id"]] = r["total"]
+                assessed_map[r["compliance_assessment_id"]] = r["assessed"]
+
+        if ig_audits:
+            ig_groups_by_audit = {
+                a.id: set(a.selected_implementation_groups) for a in ig_audits
+            }
+            for aid in ig_groups_by_audit:
+                total_map.setdefault(aid, 0)
+                assessed_map.setdefault(aid, 0)
+            ras = RequirementAssessment.objects.filter(
+                compliance_assessment_id__in=list(ig_groups_by_audit),
+                requirement__assessable=True,
+            ).select_related("requirement")
+            for ra in ras:
+                req_groups = ra.requirement.implementation_groups or []
+                if not (
+                    ig_groups_by_audit[ra.compliance_assessment_id]
+                    & set(req_groups)
+                ):
+                    continue
+                total_map[ra.compliance_assessment_id] += 1
+                if ra.result != not_assessed or ra.score is not None:
+                    assessed_map[ra.compliance_assessment_id] += 1
+
         optimized_data["total_requirements"] = total_map
         optimized_data["assessed_requirements"] = assessed_map
         return optimized_data
@@ -11237,15 +11273,10 @@ class ComplianceAssessmentViewSet(BaseModelViewSet):
         )
 
         if self.action == "list":
-            # List view: lightweight prefetch for progress with implementation groups
-            qs = qs.prefetch_related(
-                Prefetch(
-                    "requirement_assessments",
-                    queryset=RequirementAssessment.objects.filter(
-                        requirement__assessable=True
-                    ).select_related("requirement"),
-                ),
-            )
+            # List view: no requirement_assessments prefetch — both the
+            # IG and no-IG progress paths are computed in
+            # `_get_optimized_object_data` via bounded per-page queries.
+            pass
         elif self.action == "retrieve":
             # Detail view only: full prefetches for the read serializer
             qs = qs.select_related(
