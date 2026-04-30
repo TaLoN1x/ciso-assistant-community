@@ -1,6 +1,13 @@
 <script lang="ts">
 	import DetailView from '$lib/components/DetailView/DetailView.svelte';
 	import Anchor from '$lib/components/Anchor/Anchor.svelte';
+	import NewRevisionButton from '$lib/components/Forms/NewRevisionButton.svelte';
+	import FilePreviewModal from '$lib/components/Modals/FilePreviewModal.svelte';
+	import {
+		getModalStore,
+		type ModalComponent,
+		type ModalSettings
+	} from '$lib/components/Modals/stores';
 	import type { PageData, ActionData } from './$types';
 	import { m } from '$paraglide/messages';
 
@@ -10,6 +17,20 @@
 	}
 
 	let { data, form }: Props = $props();
+	const modalStore = getModalStore();
+
+	function openFilePreview(file: any) {
+		const component: ModalComponent = {
+			ref: FilePreviewModal,
+			props: {
+				fileId: file.id,
+				filename: file.original_name,
+				downloadHref: `/evidence-files/${file.id}/download`
+			}
+		};
+		const modal: ModalSettings = { type: 'component', component };
+		modalStore.trigger(modal);
+	}
 </script>
 
 {#if data.model.name === 'fearedevent'}
@@ -29,13 +50,7 @@
 
 {#if data.model.name === 'evidence'}
 	<div class="mt-4 flex justify-end">
-		<a
-			href={`/evidences/${data.data.id}/new-revision`}
-			class="btn preset-filled-primary-500"
-			data-testid="new-revision-button"
-		>
-			<i class="fa-solid fa-plus mr-2"></i>New revision
-		</a>
+		<NewRevisionButton evidenceId={data.data.id} evidenceName={data.data.name} />
 	</div>
 {/if}
 
@@ -68,12 +83,13 @@
 					>
 				{/if}
 			</h4>
-			<Anchor
-				href={`/api/evidence-revisions/${data.data.id}/zip/`}
+			<a
+				href={`/evidence-revisions/${data.data.id}/zip`}
 				class="btn preset-tonal-surface btn-sm"
+				data-sveltekit-reload
 			>
 				<i class="fa-solid fa-file-zipper mr-2"></i>Download all (zip)
-			</Anchor>
+			</a>
 		</div>
 		<table class="w-full text-sm">
 			<thead class="bg-gray-50 text-xs uppercase text-gray-600">
@@ -88,7 +104,14 @@
 				{#each data.data.files as f}
 					<tr class="border-t">
 						<td class="px-3 py-2">
-							<i class="fa-solid fa-file mr-2 text-gray-400"></i>{f.original_name}
+							<button
+								type="button"
+								class="text-left hover:underline hover:text-blue-600 inline-flex items-center"
+								onclick={() => openFilePreview(f)}
+								title="Preview"
+							>
+								<i class="fa-solid fa-file mr-2 text-gray-400"></i>{f.original_name}
+							</button>
 						</td>
 						<td class="px-3 py-2 text-right tabular-nums">
 							{#if f.size < 1024}{f.size} B
@@ -99,13 +122,14 @@
 							{f.sha256 ? `${f.sha256.slice(0, 6)}…${f.sha256.slice(-4)}` : '—'}
 						</td>
 						<td class="px-3 py-2 text-right">
-							<Anchor
+							<a
 								href={`/evidence-files/${f.id}/download`}
 								class="text-gray-500 hover:text-blue-600"
 								title="Download"
+								data-sveltekit-reload
 							>
 								<i class="fa-solid fa-download"></i>
-							</Anchor>
+							</a>
 						</td>
 					</tr>
 				{/each}

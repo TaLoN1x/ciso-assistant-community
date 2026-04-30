@@ -15,7 +15,9 @@
 		type ModalSettings
 	} from '$lib/components/Modals/stores';
 	import { page } from '$app/state';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
+	import EvidenceRevisionUploaderModal from '$lib/components/Modals/EvidenceRevisionUploaderModal.svelte';
+	import { BASE_API_URL } from '$lib/utils/constants';
 
 	interface Props {
 		data: PageData;
@@ -25,29 +27,24 @@
 	let { data, form }: Props = $props();
 
 	const modalStore: ModalStore = getModalStore();
-	async function modalRevisionCreate(evidence): void {
-		const model = getModelInfo('evidence-revisions');
-		const createSchema = modelSchema(model.urlModel);
-		const initialData = {
-			evidence: evidence.id,
-			folder: evidence.folder.id,
-			task_node: data.data.id
-		};
-		const createForm = await superValidate(initialData, zod(createSchema), { errors: false });
-		let modalComponent: ModalComponent = {
-			ref: CreateModal,
+	async function openRevisionUploader(evidence): Promise<void> {
+		const res = await fetch(`/evidences/${evidence.id}/new-revision`, {
+			headers: { Accept: 'application/json' }
+		});
+		const body = res.ok ? await res.json() : { results: [] };
+		const latest = (body.results ?? [])[0] ?? null;
+
+		const modalComponent: ModalComponent = {
+			ref: EvidenceRevisionUploaderModal,
 			props: {
-				form: createForm,
-				model: model,
-				debug: false,
-				customNameDescription: false,
-				formAction: `?/addEvidenceRevision`
+				evidence: { id: evidence.id, name: evidence.str ?? evidence.name },
+				latestRevision: latest,
+				taskNodeId: data.data.id
 			}
 		};
-		let modal: ModalSettings = {
+		const modal: ModalSettings = {
 			type: 'component',
 			component: modalComponent,
-			// Data
 			title: m.addEvidenceRevisionFor({ evidenceName: `${evidence.folder.str}/${evidence.str}` })
 		};
 		modalStore.trigger(modal);
@@ -265,7 +262,7 @@
 							{#if !taskNode.evidence_reviewed.includes(evidence.id)}
 								{#if page.data.user.permissions['add_evidencerevision']}
 									<button
-										onclick={() => modalRevisionCreate(evidence)}
+										onclick={() => openRevisionUploader(evidence)}
 										class="text-primary-500 hover:text-primary-700"
 									>
 										<i class="fa-solid fa-file-circle-plus"></i>

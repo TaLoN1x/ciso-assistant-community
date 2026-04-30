@@ -2,6 +2,17 @@ import { BASE_API_URL } from '$lib/utils/constants';
 import { error, type NumericRange } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
+export const GET: RequestHandler = async ({ fetch, params }) => {
+	const upstream = await fetch(
+		`${BASE_API_URL}/evidence-revisions/?evidence=${params.id}&ordering=-version&limit=1`
+	);
+	const text = await upstream.text();
+	return new Response(text, {
+		status: upstream.status,
+		headers: { 'Content-Type': 'application/json' }
+	});
+};
+
 export const POST: RequestHandler = async ({ fetch, request, params }) => {
 	const incoming = await request.formData();
 	const outgoing = new FormData();
@@ -27,14 +38,11 @@ export const POST: RequestHandler = async ({ fetch, request, params }) => {
 
 export const PUT: RequestHandler = async ({ fetch, request, params }) => {
 	const body = await request.json();
-	const upstream = await fetch(
-		`${BASE_API_URL}/evidences/${params.id}/revisions/preflight/`,
-		{
-			method: 'POST',
-			body: JSON.stringify(body),
-			headers: { 'Content-Type': 'application/json' }
-		}
-	);
+	const upstream = await fetch(`${BASE_API_URL}/evidences/${params.id}/revisions/preflight/`, {
+		method: 'POST',
+		body: JSON.stringify(body),
+		headers: { 'Content-Type': 'application/json' }
+	});
 	const text = await upstream.text();
 	return new Response(text, {
 		status: upstream.status,

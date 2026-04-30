@@ -9961,29 +9961,38 @@ class EvidenceViewSet(BaseModelViewSet):
         ) = RoleAssignment.get_accessible_object_ids(
             Folder.get_root_folder(), request.user, Evidence
         )
-        response = Response(status=status.HTTP_403_FORBIDDEN)
-        if UUID(pk) in object_ids_view:
-            evidence = self.get_object()
-            if (
-                not evidence.last_revision.attachment
-                or not evidence.last_revision.attachment.storage.exists(
-                    evidence.last_revision.attachment.name
-                )
-            ):
-                return Response(status=status.HTTP_404_NOT_FOUND)
-            if request.method == "GET":
-                content_type = mimetypes.guess_type(evidence.last_revision.filename())[
-                    0
-                ]
-                response = HttpResponse(
-                    evidence.last_revision.attachment,
-                    content_type=content_type,
-                    headers={
-                        "Content-Disposition": f"attachment; filename={evidence.last_revision.filename()}"
-                    },
-                    status=status.HTTP_200_OK,
-                )
-        return response
+        if UUID(pk) not in object_ids_view:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        evidence = self.get_object()
+        last = evidence.last_revision
+        if not last:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        first_file = last.files.order_by("ordering", "created_at").first()
+        if (
+            first_file
+            and first_file.file
+            and first_file.file.storage.exists(first_file.file.name)
+        ):
+            name = first_file.original_name or os.path.basename(first_file.file.name)
+            content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+            return HttpResponse(
+                first_file.file,
+                content_type=content_type,
+                headers={"Content-Disposition": f'attachment; filename="{name}"'},
+                status=status.HTTP_200_OK,
+            )
+        if last.attachment and last.attachment.storage.exists(last.attachment.name):
+            content_type = mimetypes.guess_type(last.filename() or "")[0]
+            return HttpResponse(
+                last.attachment,
+                content_type=content_type,
+                headers={
+                    "Content-Disposition": f"attachment; filename={last.filename()}"
+                },
+                status=status.HTTP_200_OK,
+            )
+        return Response(status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=False, name="Get status choices")
     def status(self, request):
@@ -10038,6 +10047,7 @@ class EvidenceViewSet(BaseModelViewSet):
 
         observation = request.data.get("observation", "") or ""
         link = request.data.get("link") or None
+        task_node_id = request.data.get("task_node") or None
         max_version = EvidenceRevision.objects.filter(evidence=evidence).aggregate(
             models.Max("version")
         )["version__max"]
@@ -10055,6 +10065,7 @@ class EvidenceViewSet(BaseModelViewSet):
                 version=next_version,
                 observation=observation,
                 link=link,
+                task_node_id=task_node_id,
                 uploaded_by=request.user,
                 status=rev_status,
                 reviewed_by=None if require_review else request.user,
@@ -10130,24 +10141,37 @@ class EvidenceRevisionViewSet(BaseModelViewSet):
         ) = RoleAssignment.get_accessible_object_ids(
             Folder.get_root_folder(), request.user, EvidenceRevision
         )
-        response = Response(status=status.HTTP_403_FORBIDDEN)
-        if UUID(pk) in object_ids_view:
-            evidence = self.get_object()
-            if not evidence.attachment or not evidence.attachment.storage.exists(
-                evidence.attachment.name
-            ):
-                return Response(status=status.HTTP_404_NOT_FOUND)
-            if request.method == "GET":
-                content_type = mimetypes.guess_type(evidence.filename())[0]
-                response = HttpResponse(
-                    evidence.attachment,
-                    content_type=content_type,
-                    headers={
-                        "Content-Disposition": f"attachment; filename={evidence.filename()}"
-                    },
-                    status=status.HTTP_200_OK,
-                )
-        return response
+        if UUID(pk) not in object_ids_view:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        revision = self.get_object()
+
+        first_file = revision.files.order_by("ordering", "created_at").first()
+        if (
+            first_file
+            and first_file.file
+            and first_file.file.storage.exists(first_file.file.name)
+        ):
+            name = first_file.original_name or os.path.basename(first_file.file.name)
+            content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+            return HttpResponse(
+                first_file.file,
+                content_type=content_type,
+                headers={"Content-Disposition": f'attachment; filename="{name}"'},
+                status=status.HTTP_200_OK,
+            )
+        if revision.attachment and revision.attachment.storage.exists(
+            revision.attachment.name
+        ):
+            content_type = mimetypes.guess_type(revision.filename() or "")[0]
+            return HttpResponse(
+                revision.attachment,
+                content_type=content_type,
+                headers={
+                    "Content-Disposition": f"attachment; filename={revision.filename()}"
+                },
+                status=status.HTTP_200_OK,
+            )
+        return Response(status=status.HTTP_404_NOT_FOUND)
 
     @action(methods=["post"], detail=True)
     def delete_attachment(self, request, pk):
@@ -10258,14 +10282,23 @@ class EvidenceFileViewSet(BaseModelViewSet):
     model = EvidenceFile
     filterset_fields = ["revision", "sha256"]
     http_method_names = ["get", "delete", "head", "options"]
+    # Delegate object-perm checks to the parent revision so existing roles work
+    # without minting new view_evidencefile / change_evidencefile grants.
+    permission_overrides = {
+        "list": "view_evidencerevision",
+        "retrieve": "view_evidencerevision",
+        "download": "view_evidencerevision",
+        "destroy": "change_evidencerevision",
+    }
+
+    def get_queryset(self):
+        accessible_revisions = RoleAssignment.get_accessible_object_ids(
+            Folder.get_root_folder(), self.request.user, EvidenceRevision
+        )[0]
+        return EvidenceFile.objects.filter(revision_id__in=accessible_revisions)
 
     @action(methods=["get"], detail=True)
     def download(self, request, pk):
-        accessible = RoleAssignment.get_accessible_object_ids(
-            Folder.get_root_folder(), request.user, EvidenceFile
-        )[0]
-        if UUID(pk) not in accessible:
-            return Response(status=status.HTTP_403_FORBIDDEN)
         ef = self.get_object()
         if not ef.file or not ef.file.storage.exists(ef.file.name):
             return Response(status=status.HTTP_404_NOT_FOUND)
@@ -15920,6 +15953,56 @@ class TaskTemplateViewSet(ExportMixin, BaseModelViewSet):
     ]
     search_fields = ["ref_id", "name"]
     filterset_class = TaskTemplateFilter
+
+    def get_queryset(self):
+        from django.db.models import DateField, CharField, Value
+
+        qs = super().get_queryset()
+        today = timezone.localdate()
+
+        next_recurrent = (
+            TaskNode.objects.filter(task_template=OuterRef("pk"), due_date__gte=today)
+            .order_by("due_date")
+            .values("due_date")[:1]
+        )
+        next_oneoff = (
+            TaskNode.objects.filter(task_template=OuterRef("pk"))
+            .order_by("due_date")
+            .values("due_date")[:1]
+        )
+        last_status_recurrent = (
+            TaskNode.objects.filter(task_template=OuterRef("pk"), due_date__lt=today)
+            .order_by("-due_date")
+            .values("status")[:1]
+        )
+        next_status_recurrent = (
+            TaskNode.objects.filter(task_template=OuterRef("pk"), due_date__gte=today)
+            .order_by("due_date")
+            .values("status")[:1]
+        )
+        next_status_oneoff = (
+            TaskNode.objects.filter(task_template=OuterRef("pk"))
+            .order_by("due_date")
+            .values("status")[:1]
+        )
+
+        return qs.annotate(
+            next_occurrence=Case(
+                When(is_recurrent=True, then=Subquery(next_recurrent)),
+                default=Subquery(next_oneoff),
+                output_field=DateField(null=True),
+            ),
+            last_occurrence_status=Case(
+                When(is_recurrent=True, then=Subquery(last_status_recurrent)),
+                default=Value(None),
+                output_field=CharField(null=True),
+            ),
+            next_occurrence_status=Case(
+                When(is_recurrent=True, then=Subquery(next_status_recurrent)),
+                default=Subquery(next_status_oneoff),
+                output_field=CharField(null=True),
+            ),
+        )
 
     export_config = {
         "filename": "task_templates",

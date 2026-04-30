@@ -2203,6 +2203,7 @@ class EvidenceFileWriteSerializer(BaseModelSerializer):
 class EvidenceReadSerializer(BaseModelSerializer):
     path = PathField(read_only=True)
     attachment = serializers.SerializerMethodField()
+    file_count = serializers.SerializerMethodField()
     size = serializers.CharField(source="get_size")
     folder = FieldsRelatedField()
     applied_controls = FieldsRelatedField(many=True)
@@ -2212,6 +2213,10 @@ class EvidenceReadSerializer(BaseModelSerializer):
     owner = FieldsRelatedField(many=True)
     status = serializers.CharField(source="get_status_display")
     link = serializers.SerializerMethodField()
+
+    def get_file_count(self, obj):
+        last = obj.last_revision
+        return last.files.count() if last else 0
 
     def get_attachment(self, obj):
         last = obj.last_revision

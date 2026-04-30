@@ -953,9 +953,24 @@ export const URL_MODEL_MAP: ModelMap = {
 		verboseName: 'Evidence revision',
 		verboseNamePlural: 'Evidence revisions',
 		fileFields: ['attachment'],
+		disableCreate: true,
 		foreignKeyFields: [
 			{ field: 'evidence', urlModel: 'evidences' },
 			{ field: 'task_node', urlModel: 'task-nodes' }
+		],
+		detailViewFields: [
+			{ field: 'evidence' },
+			{ field: 'version' },
+			{ field: 'status_display' },
+			{ field: 'uploaded_by' },
+			{ field: 'reviewed_by' },
+			{ field: 'reviewed_at', type: 'datetime' },
+			{ field: 'review_comment' },
+			{ field: 'task_node' },
+			{ field: 'link' },
+			{ field: 'observation' },
+			{ field: 'created_at', type: 'datetime' },
+			{ field: 'updated_at', type: 'datetime' }
 		]
 	},
 	'managed-documents': {

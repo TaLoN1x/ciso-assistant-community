@@ -4289,5 +4289,12 @@
 	"editDashboard": "Edit dashboard",
 	"requiresChangeGlobalSettings": "Requires permission to change global settings.",
 	"clearDefault": "Clear default",
-	"noDashboardSelected": "No dashboard selected"
+	"noDashboardSelected": "No dashboard selected",
+	"statusDisplay": "Status",
+	"uploadedBy": "Uploaded by",
+	"reviewedBy": "Reviewed by",
+	"reviewedAt": "Reviewed at",
+	"reviewComment": "Review comment",
+	"manifestHash": "Manifest hash",
+	"taskNode": "Task occurrence"
 }

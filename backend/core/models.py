@@ -4358,7 +4358,11 @@ class Evidence(
 
     @property
     def last_revision(self):
-        return self.revisions.order_by("-version").first() or None
+        if not hasattr(self, "_last_revision_cache"):
+            self._last_revision_cache = (
+                self.revisions.order_by("-version").prefetch_related("files").first()
+            )
+        return self._last_revision_cache
 
     def get_folder(self):
         if self.applied_controls:

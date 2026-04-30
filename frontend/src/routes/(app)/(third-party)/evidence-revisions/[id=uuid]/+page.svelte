@@ -7,6 +7,7 @@
 	import { page } from '$app/state';
 	import Anchor from '$lib/components/Anchor/Anchor.svelte';
 	import DetailView from '$lib/components/DetailView/DetailView.svelte';
+	import FilePreviewModal from '$lib/components/Modals/FilePreviewModal.svelte';
 	import { m } from '$paraglide/messages';
 	import { defaults } from 'sveltekit-superforms';
 	import { z } from 'zod';
@@ -28,6 +29,18 @@
 
 	let attachment: Attachment | undefined = $state(undefined);
 	const modalStore: ModalStore = getModalStore();
+
+	function openFilePreview(file: any) {
+		const component: ModalComponent = {
+			ref: FilePreviewModal,
+			props: {
+				fileId: file.id,
+				filename: file.original_name,
+				downloadHref: `/evidence-files/${file.id}/download`
+			}
+		};
+		modalStore.trigger({ type: 'component', component });
+	}
 
 	function modalConfirm(id: string, name: string, action: string): void {
 		const modalComponent: ModalComponent = {
@@ -101,12 +114,13 @@
 					>
 				{/if}
 			</h4>
-			<Anchor
-				href={`/api/evidence-revisions/${data.data.id}/zip/`}
+			<a
+				href={`/evidence-revisions/${data.data.id}/zip`}
 				class="btn preset-tonal-surface btn-sm"
+				data-sveltekit-reload
 			>
 				<i class="fa-solid fa-file-zipper mr-2"></i>Download all (zip)
-			</Anchor>
+			</a>
 		</div>
 		<table class="w-full text-sm">
 			<thead class="bg-gray-50 text-xs uppercase text-gray-600">
@@ -121,7 +135,14 @@
 				{#each data.data.files as f}
 					<tr class="border-t">
 						<td class="px-3 py-2">
-							<i class="fa-solid fa-file mr-2 text-gray-400"></i>{f.original_name}
+							<button
+								type="button"
+								class="text-left hover:underline hover:text-blue-600 inline-flex items-center"
+								onclick={() => openFilePreview(f)}
+								title="Preview"
+							>
+								<i class="fa-solid fa-file mr-2 text-gray-400"></i>{f.original_name}
+							</button>
 						</td>
 						<td class="px-3 py-2 text-right tabular-nums">
 							{#if f.size < 1024}{f.size} B
@@ -132,13 +153,14 @@
 							{f.sha256 ? `${f.sha256.slice(0, 6)}…${f.sha256.slice(-4)}` : '—'}
 						</td>
 						<td class="px-3 py-2 text-right">
-							<Anchor
+							<a
 								href={`/evidence-files/${f.id}/download`}
 								class="text-gray-500 hover:text-blue-600"
 								title="Download"
+								data-sveltekit-reload
 							>
 								<i class="fa-solid fa-download"></i>
-							</Anchor>
+							</a>
 						</td>
 					</tr>
 				{/each}
