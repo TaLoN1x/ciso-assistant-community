@@ -1665,6 +1665,19 @@ class PerimeterViewSet(BaseModelViewSet):
     search_fields = ["name", "ref_id", "description"]
     filterset_fields = ["name", "folder", "campaigns"]
 
+    def get_queryset(self):
+        # `Perimeter.__str__` returns `self.folder.name + "/" + self.name`,
+        # so any list response that serialises perimeters must
+        # select_related("folder") or pay an N+1. The default_assignee
+        # M2M is rendered by FieldsRelatedField and similarly needs to
+        # be prefetched.
+        return (
+            super()
+            .get_queryset()
+            .select_related("folder")
+            .prefetch_related("default_assignee")
+        )
+
     @method_decorator(cache_page(60 * LONG_CACHE_TTL))
     @action(detail=False, name="Get status choices")
     def lc_status(self, request):
@@ -11262,6 +11275,7 @@ class ComplianceAssessmentViewSet(BaseModelViewSet):
                 "folder__parent_folder",  # For get_folder_full_path() optimization
                 "framework",  # Displayed in table
                 "perimeter",  # Displayed in table
+                "perimeter__folder",  # Perimeter.__str__ uses folder.name -> avoid N+1
             )
             .annotate(
                 _has_questions=Exists(
@@ -14016,6 +14030,11 @@ class RequirementAssessmentViewSet(BaseModelViewSet):
                 "answers__selected_choices",  # Needed by build_answers_dict() to get choice ref_ids
                 "requirement__questions",  # Needed by FilteredNodeSerializer.questions
                 "requirement__questions__choices",  # Needed by get_questions_translated
+                # Avoid per-row N+1 from RequirementNode.associated_reference_controls
+                # and associated_threats — both are M2Ms iterated by the
+                # FilteredNodeSerializer used inside the read serializer.
+                "requirement__reference_controls",
+                "requirement__threats",
             )
         )
         auditee_folders = get_auditee_filtered_folder_ids(self.request.user)
