@@ -984,11 +984,7 @@
 															{@const displayValue = ['name', 'description', 'ref_id'].includes(key)
 																? (value ?? '-')
 																: safeTranslate(value ?? '-')}
-															{#if displayValue?.length > 300}
-																<MarkdownRenderer content={displayValue.slice(0, 300)} />
-															{:else}
-																<MarkdownRenderer content={displayValue.slice(0, 300)} />
-															{/if}
+															<MarkdownRenderer content={displayValue} />
 														{/if}
 														{@render badge?.(key, row)}
 													</div>
