@@ -2545,7 +2545,17 @@ class RequirementNode(ReferentialObjectMixin, I18nObjectMixin):
 
     @property
     def get_questions_translated(self) -> dict | None:
-        questions_qs = self.questions.prefetch_related("choices").all()
+        # If the caller has already prefetched `questions__choices` on this
+        # node's parent queryset, use that cache directly. Calling
+        # `self.questions.prefetch_related("choices").all()` here builds a
+        # new queryset that bypasses the cache, so list serialisation pays
+        # 1-2 fresh queries per requirement node (N+1). Falling back to the
+        # in-property prefetch keeps non-prefetched callers correct.
+        cache = getattr(self, "_prefetched_objects_cache", None)
+        if cache is not None and "questions" in cache:
+            questions_qs = self.questions.all()
+        else:
+            questions_qs = self.questions.prefetch_related("choices").all()
         if not questions_qs:
             return None
 

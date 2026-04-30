@@ -195,3 +195,68 @@ class TestRequirementNodeSerializerTranslation:
         assert questions["urn:test:trans:qsc"]["text"] == "Pick one color"
         choices = questions["urn:test:trans:qsc"]["choices"]
         assert choices[0]["value"] == "Red"
+
+
+@pytest.mark.django_db
+class TestQuestionsTranslatedPrefetchCache:
+    """Verify `get_questions_translated` honours the parent queryset's
+    prefetch cache for `questions__choices`.
+
+    Before the fix, the property called
+    `self.questions.prefetch_related("choices").all()` unconditionally,
+    which builds a fresh queryset and bypasses any cache populated by
+    the caller — so list serialisation paid 1-2 queries per requirement
+    node (N+1).
+
+    The fix uses the prefetched cache when available and falls back to
+    the in-property prefetch otherwise. These tests pin both:
+      - output equivalence between the cached and uncached path,
+      - query count drops to zero when prefetch is present.
+    """
+
+    def test_output_matches_uncached_path(self, translated_node):
+        """Same node, two access paths (with and without prefetch).
+        Output must be identical."""
+        rn = translated_node["rn"]
+        # Uncached path: hit the property on the model instance directly.
+        with translation_override("en"):
+            uncached = rn.get_questions_translated
+
+        # Cached path: re-fetch via a queryset that prefetches
+        # questions__choices, then read the property.
+        rn_cached = RequirementNode.objects.prefetch_related(
+            "questions__choices"
+        ).get(pk=rn.pk)
+        with translation_override("en"):
+            cached = rn_cached.get_questions_translated
+
+        assert cached == uncached
+
+    def test_no_queries_when_prefetched(self, translated_node):
+        """With prefetch, accessing the property must not hit the DB."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        rn_cached = RequirementNode.objects.prefetch_related(
+            "questions__choices"
+        ).get(pk=translated_node["rn"].pk)
+        with CaptureQueriesContext(connection) as ctx:
+            with translation_override("en"):
+                _ = rn_cached.get_questions_translated
+        # Zero DB hits — the prefetch cache supplies both questions and
+        # their choices.
+        assert len(ctx.captured_queries) == 0, [
+            q["sql"] for q in ctx.captured_queries
+        ]
+
+    def test_queries_when_not_prefetched(self, translated_node):
+        """Without prefetch, the property still works (fallback path)."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        rn = RequirementNode.objects.get(pk=translated_node["rn"].pk)
+        with CaptureQueriesContext(connection) as ctx:
+            with translation_override("en"):
+                _ = rn.get_questions_translated
+        # Non-zero — proves we're not relying on a stale cache.
+        assert len(ctx.captured_queries) > 0
