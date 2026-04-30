@@ -19,6 +19,7 @@
 		"postinstall": "paraglide-js compile --project ./project.inlang"
 	},
 	"devDependencies": {
+		"@eslint/js": "^9.39.2",
 		"@inlang/paraglide-js": "^2.17.0",
 		"@playwright/test": "^1.55.1",
 		"@skeletonlabs/skeleton": "^4.0.0",
@@ -53,6 +54,7 @@
 		"sv-typewriter": "^4.1.2",
 		"svelte": "^5.53.5",
 		"svelte-check": "^4.2.2",
+		"svelte-eslint-parser": "^1.4.1",
 		"sveltekit-flash-message": "^2.4.6",
 		"sveltekit-rate-limiter": "^0.5.2",
 		"sveltekit-superforms": "^2.30.0",
