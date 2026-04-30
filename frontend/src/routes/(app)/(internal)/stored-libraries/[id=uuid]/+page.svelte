@@ -187,10 +187,8 @@
 			<MarkdownRenderer content={data.library.packager} />
 
 			<p class="text-md leading-5 text-gray-700">
-				<strong>{m.version()}</strong>:
+				<strong>{m.version()}</strong>: {data.library.version}
 			</p>
-			<MarkdownRenderer content={`${data.library.version}`} />
-			<!-- Value enclosed in backticks to avoid using the "toString" method. Useful if the returned "version" value becomes a string in the future -->
 
 			{#if data.library.publication_date}
 				<p class="text-md leading-5 text-gray-700">
