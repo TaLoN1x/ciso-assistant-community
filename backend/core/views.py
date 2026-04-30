@@ -13985,6 +13985,40 @@ class RequirementAssessmentViewSet(BaseModelViewSet):
     """
 
     model = RequirementAssessment
+
+    def _get_optimized_object_data(self, queryset):
+        """Bulk-load parent requirement nodes for the page so the
+        `RequirementNode.parent_requirement` property short-circuits its
+        per-row `.filter(urn=self.parent_urn).first()` fallback.
+
+        Mirrors the `_parent_requirement_obj` cache pattern used in the
+        other places that build requirement trees. Bounded by the page —
+        a single `urn__in=<page parent_urns>` query.
+        """
+        optimized_data = super()._get_optimized_object_data(queryset)
+        page = list(queryset)
+        if not page:
+            return optimized_data
+        parent_urns = {
+            req.parent_urn
+            for ra in page
+            for req in [getattr(ra, "requirement", None)]
+            if req is not None and req.parent_urn
+        }
+        if not parent_urns:
+            return optimized_data
+        parents_by_urn = {
+            p.urn: p
+            for p in RequirementNode.objects.filter(urn__in=parent_urns)
+        }
+        for ra in page:
+            req = getattr(ra, "requirement", None)
+            if req is None:
+                continue
+            parent = parents_by_urn.get(req.parent_urn)
+            if parent is not None:
+                req._parent_requirement_obj = parent
+        return optimized_data
     filterset_fields = [
         "folder",
         "folder__name",
