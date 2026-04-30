@@ -61,6 +61,7 @@ GENERAL_SETTINGS_KEYS = [
     "openai_model",
     "openai_api_key",
     "default_custom_analytics_dashboard",
+    "evidence_require_review_on_revision",
 ]
 
 

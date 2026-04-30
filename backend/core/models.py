@@ -4369,35 +4369,44 @@ class Evidence(
             return None
 
     def filename(self):
-        return (
-            os.path.basename(self.last_revision.attachment.name)
-            if self.last_revision and self.last_revision.attachment
-            else None
-        )
+        rev = self.last_revision
+        if not rev:
+            return None
+        files = list(rev.files.all())
+        if files:
+            first = files[0].original_name or os.path.basename(files[0].file.name)
+            return first if len(files) == 1 else f"{first} +{len(files) - 1} more"
+        if rev.attachment:
+            return os.path.basename(rev.attachment.name)
+        return None
 
     def get_size(self):
-        if (
-            not self.last_revision
-            or not self.last_revision.attachment
-            or not self.last_revision.attachment.storage.exists(
-                self.last_revision.attachment.name
-            )
-        ):
+        rev = self.last_revision
+        if not rev:
             return None
-        # get the attachment size with the correct unit
-        size = self.last_revision.attachment.size
+        files = list(rev.files.all())
+        if files:
+            size = sum(f.size for f in files)
+        elif rev.attachment and rev.attachment.storage.exists(rev.attachment.name):
+            size = rev.attachment.size
+        else:
+            return None
         if size < 1024:
             return f"{size} B"
-        elif size < 1024 * 1024:
+        if size < 1024 * 1024:
             return f"{size / 1024:.1f} KB"
-        else:
-            return f"{size / 1024 / 1024:.1f} MB"
+        return f"{size / 1024 / 1024:.1f} MB"
 
     @property
     def attachment_hash(self):
-        if not self.last_revision or not self.last_revision.attachment:
+        rev = self.last_revision
+        if not rev:
             return None
-        return hashlib.sha256(self.last_revision.attachment.read()).hexdigest()
+        if rev.manifest_hash:
+            return rev.manifest_hash
+        if rev.attachment:
+            return hashlib.sha256(rev.attachment.read()).hexdigest()
+        return None
 
 
 class EvidenceRevision(AbstractBaseModel, FolderMixin):
@@ -4438,6 +4447,36 @@ class EvidenceRevision(AbstractBaseModel, FolderMixin):
         verbose_name=_("Link"),
     )
     observation = models.TextField(verbose_name="Observation", blank=True, null=True)
+
+    manifest_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        null=True,
+        db_index=True,
+        verbose_name=_("Manifest hash"),
+        help_text=_("SHA256 of sorted file hashes; identifies the bundle as a whole."),
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Evidence.Status.choices,
+        default=Evidence.Status.DRAFT,
+    )
+    uploaded_by = models.ForeignKey(
+        "iam.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploaded_evidence_revisions",
+    )
+    reviewed_by = models.ForeignKey(
+        "iam.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_evidence_revisions",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_comment = models.TextField(blank=True, null=True)
 
     fields_to_check = ["evidence", "version"]
 
@@ -4509,25 +4548,113 @@ class EvidenceRevision(AbstractBaseModel, FolderMixin):
         return super().delete(using=using, keep_parents=keep_parents)
 
     def filename(self):
-        return os.path.basename(self.attachment.name)
+        files = list(self.files.all())
+        if files:
+            first = files[0].original_name or os.path.basename(files[0].file.name)
+            return first if len(files) == 1 else f"{first} +{len(files) - 1} more"
+        if self.attachment:
+            return os.path.basename(self.attachment.name)
+        return None
 
     def get_size(self):
-        if not self.attachment or not self.attachment.storage.exists(
-            self.attachment.name
-        ):
+        files = list(self.files.all())
+        if files:
+            size = sum(f.size for f in files)
+        elif self.attachment and self.attachment.storage.exists(self.attachment.name):
+            size = self.attachment.size
+        else:
             return None
-        # get the attachment size with the correct unit
-        size = self.attachment.size
         if size < 1024:
             return f"{size} B"
-        elif size < 1024 * 1024:
+        if size < 1024 * 1024:
             return f"{size / 1024:.1f} KB"
-        else:
-            return f"{size / 1024 / 1024:.1f} MB"
+        return f"{size / 1024 / 1024:.1f} MB"
 
     class Meta:
         verbose_name = _("Evidence Revision")
         verbose_name_plural = _("Evidence Revisions")
+
+    def recompute_manifest_hash(self, save=True):
+        hashes = sorted(self.files.exclude(sha256="").values_list("sha256", flat=True))
+        if not hashes:
+            self.manifest_hash = None
+        else:
+            self.manifest_hash = hashlib.sha256(
+                "".join(hashes).encode("ascii")
+            ).hexdigest()
+        if save:
+            super().save(update_fields=["manifest_hash"])
+        return self.manifest_hash
+
+    @property
+    def total_size(self):
+        return sum(f.size for f in self.files.all())
+
+
+class EvidenceFile(AbstractBaseModel, FolderMixin):
+    revision = models.ForeignKey(
+        EvidenceRevision,
+        on_delete=models.CASCADE,
+        related_name="files",
+    )
+    file = models.FileField(
+        max_length=500,
+        validators=[validate_file_size, validate_file_name],
+    )
+    original_name = models.CharField(max_length=500, blank=True)
+    sha256 = models.CharField(max_length=64, blank=True, db_index=True)
+    size = models.BigIntegerField(default=0)
+    ordering = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["ordering", "created_at"]
+        verbose_name = _("Evidence File")
+        verbose_name_plural = _("Evidence Files")
+
+    def _compute_sha256(self) -> str:
+        hash_obj = hashlib.sha256()
+        if hasattr(self.file, "chunks"):
+            for chunk in self.file.chunks(chunk_size=1024 * 1024):
+                hash_obj.update(chunk)
+            if hasattr(self.file, "seek"):
+                self.file.seek(0)
+            return hash_obj.hexdigest()
+        if default_storage.exists(self.file.name):
+            with default_storage.open(self.file.name, "rb") as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    hash_obj.update(chunk)
+            return hash_obj.hexdigest()
+        return ""
+
+    def save(self, *args, **kwargs):
+        if hasattr(self.revision, "folder") and self.revision.folder:
+            self.folder = self.revision.folder
+        if self.file:
+            if not self.original_name:
+                self.original_name = os.path.basename(self.file.name)
+            if not self.size:
+                try:
+                    self.size = self.file.size
+                except Exception:
+                    self.size = 0
+            if not self.sha256:
+                try:
+                    self.sha256 = self._compute_sha256()
+                except Exception as e:
+                    get_logger(__name__).warning(
+                        "Failed to compute file hash", error=str(e)
+                    )
+                    self.sha256 = ""
+        super().save(*args, **kwargs)
+        self.revision.recompute_manifest_hash()
+
+    def delete(self, using=None, keep_parents=False):
+        revision = self.revision
+        if self.file:
+            self.file.delete(save=False)
+        result = super().delete(using=using, keep_parents=keep_parents)
+        revision.recompute_manifest_hash()
+        return result
 
 
 class Incident(NameDescriptionMixin, FolderMixin, FilteringLabelMixin):
