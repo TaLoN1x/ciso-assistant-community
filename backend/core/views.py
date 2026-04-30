@@ -9989,6 +9989,128 @@ class EvidenceViewSet(BaseModelViewSet):
     def status(self, request):
         return Response(dict(Evidence.Status.choices))
 
+    @action(methods=["post"], detail=True, url_path="revisions/preflight")
+    def revisions_preflight(self, request, pk):
+        accessible = RoleAssignment.get_accessible_object_ids(
+            Folder.get_root_folder(), request.user, Evidence
+        )[1]
+        if UUID(pk) not in accessible:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        evidence = self.get_object()
+        hashes = request.data.get("hashes", [])
+        if not isinstance(hashes, list):
+            return Response(
+                {"detail": "hashes must be a list"}, status=status.HTTP_400_BAD_REQUEST
+            )
+        existing = {
+            ef.sha256: str(ef.id)
+            for ef in EvidenceFile.objects.filter(
+                revision__evidence=evidence, sha256__in=hashes
+            )
+        }
+        return Response(
+            {h: {"exists": h in existing, "file_id": existing.get(h)} for h in hashes}
+        )
+
+    @action(methods=["post"], detail=True, url_path="revisions/create-multifile")
+    def create_revision_multifile(self, request, pk):
+        from global_settings.utils import evidence_requires_review
+
+        accessible = RoleAssignment.get_accessible_object_ids(
+            Folder.get_root_folder(), request.user, Evidence
+        )[1]
+        if UUID(pk) not in accessible:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        evidence = self.get_object()
+
+        try:
+            manifest = json.loads(request.data.get("manifest", "[]"))
+        except json.JSONDecodeError:
+            return Response(
+                {"detail": "Invalid manifest JSON"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not isinstance(manifest, list):
+            return Response(
+                {"detail": "manifest must be a list"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        observation = request.data.get("observation", "") or ""
+        link = request.data.get("link") or None
+        max_version = EvidenceRevision.objects.filter(evidence=evidence).aggregate(
+            models.Max("version")
+        )["version__max"]
+        next_version = (max_version or 0) + 1
+
+        require_review = evidence_requires_review()
+        rev_status = (
+            Evidence.Status.IN_REVIEW if require_review else Evidence.Status.APPROVED
+        )
+
+        with transaction.atomic():
+            revision = EvidenceRevision.objects.create(
+                evidence=evidence,
+                folder=evidence.folder,
+                version=next_version,
+                observation=observation,
+                link=link,
+                uploaded_by=request.user,
+                status=rev_status,
+                reviewed_by=None if require_review else request.user,
+                reviewed_at=None if require_review else timezone.now(),
+            )
+
+            for ordering_idx, entry in enumerate(manifest):
+                source = entry.get("source")
+                claimed_hash = entry.get("hash")
+                if source == "inherit":
+                    if not claimed_hash:
+                        raise ValidationError("inherit entries require a hash")
+                    src = EvidenceFile.objects.filter(
+                        revision__evidence=evidence, sha256=claimed_hash
+                    ).first()
+                    if not src:
+                        raise ValidationError(
+                            f"inherited file with hash {claimed_hash[:12]} not found"
+                        )
+                    EvidenceFile.objects.create(
+                        revision=revision,
+                        folder=revision.folder,
+                        file=src.file.name,
+                        original_name=entry.get("name") or src.original_name,
+                        sha256=src.sha256,
+                        size=src.size,
+                        ordering=ordering_idx,
+                    )
+                elif source == "upload":
+                    field = entry.get("field")
+                    uploaded = request.FILES.get(field) if field else None
+                    if not uploaded:
+                        raise ValidationError(
+                            f"upload entry missing file for field '{field}'"
+                        )
+                    ef = EvidenceFile(
+                        revision=revision,
+                        folder=revision.folder,
+                        file=uploaded,
+                        original_name=entry.get("name") or uploaded.name,
+                        ordering=ordering_idx,
+                    )
+                    ef.save()
+                    if claimed_hash and ef.sha256 and ef.sha256 != claimed_hash:
+                        raise ValidationError("Hash mismatch on upload")
+                else:
+                    raise ValidationError(f"Unknown manifest source: {source!r}")
+
+            evidence.status = revision.status
+            evidence.save(update_fields=["status"])
+
+        return Response(
+            EvidenceRevisionReadSerializer(revision).data,
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class EvidenceRevisionViewSet(BaseModelViewSet):
     """
@@ -10043,6 +10165,117 @@ class EvidenceRevisionViewSet(BaseModelViewSet):
                 evidence.attachment.delete()
                 response = Response(status=status.HTTP_200_OK)
         return response
+
+    @action(methods=["get"], detail=True)
+    def zip(self, request, pk):
+        accessible = RoleAssignment.get_accessible_object_ids(
+            Folder.get_root_folder(), request.user, EvidenceRevision
+        )[0]
+        if UUID(pk) not in accessible:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        revision = self.get_object()
+        files = list(revision.files.order_by("ordering", "created_at"))
+        if not files and revision.attachment:
+            return self.attachment(request, pk)
+        if not files:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in files:
+                if not f.file or not f.file.storage.exists(f.file.name):
+                    continue
+                with f.file.open("rb") as src:
+                    zf.writestr(
+                        f.original_name or os.path.basename(f.file.name), src.read()
+                    )
+        buffer.seek(0)
+        filename = f"{revision.evidence.name}-v{revision.version}.zip"
+        return HttpResponse(
+            buffer.getvalue(),
+            content_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @action(methods=["post"], detail=True)
+    def approve(self, request, pk):
+        accessible = RoleAssignment.get_accessible_object_ids(
+            Folder.get_root_folder(), request.user, EvidenceRevision
+        )[1]
+        if UUID(pk) not in accessible:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        revision = self.get_object()
+        revision.status = Evidence.Status.APPROVED
+        revision.reviewed_by = request.user
+        revision.reviewed_at = timezone.now()
+        revision.review_comment = request.data.get("comment", "") or ""
+        revision.save(
+            update_fields=["status", "reviewed_by", "reviewed_at", "review_comment"]
+        )
+        evidence = revision.evidence
+        if (
+            revision.version
+            == (
+                EvidenceRevision.objects.filter(evidence=evidence).aggregate(
+                    models.Max("version")
+                )["version__max"]
+            )
+        ):
+            evidence.status = revision.status
+            evidence.save(update_fields=["status"])
+        return Response(EvidenceRevisionReadSerializer(revision).data)
+
+    @action(methods=["post"], detail=True)
+    def reject(self, request, pk):
+        accessible = RoleAssignment.get_accessible_object_ids(
+            Folder.get_root_folder(), request.user, EvidenceRevision
+        )[1]
+        if UUID(pk) not in accessible:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        revision = self.get_object()
+        revision.status = Evidence.Status.REJECTED
+        revision.reviewed_by = request.user
+        revision.reviewed_at = timezone.now()
+        revision.review_comment = request.data.get("comment", "") or ""
+        revision.save(
+            update_fields=["status", "reviewed_by", "reviewed_at", "review_comment"]
+        )
+        evidence = revision.evidence
+        if (
+            revision.version
+            == (
+                EvidenceRevision.objects.filter(evidence=evidence).aggregate(
+                    models.Max("version")
+                )["version__max"]
+            )
+        ):
+            evidence.status = revision.status
+            evidence.save(update_fields=["status"])
+        return Response(EvidenceRevisionReadSerializer(revision).data)
+
+
+class EvidenceFileViewSet(BaseModelViewSet):
+    model = EvidenceFile
+    filterset_fields = ["revision", "sha256"]
+    http_method_names = ["get", "delete", "head", "options"]
+
+    @action(methods=["get"], detail=True)
+    def download(self, request, pk):
+        accessible = RoleAssignment.get_accessible_object_ids(
+            Folder.get_root_folder(), request.user, EvidenceFile
+        )[0]
+        if UUID(pk) not in accessible:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        ef = self.get_object()
+        if not ef.file or not ef.file.storage.exists(ef.file.name):
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        name = ef.original_name or os.path.basename(ef.file.name)
+        content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        return HttpResponse(
+            ef.file,
+            content_type=content_type,
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        )
 
 
 class UploadAttachmentView(APIView):
@@ -12243,22 +12476,38 @@ class ComplianceAssessmentViewSet(BaseModelViewSet):
             try:
                 with zipfile.ZipFile(temp_file, "w") as zipf:
                     for evidence in evidences:
-                        if (
-                            evidence.last_revision
-                            and evidence.last_revision.attachment
-                            and default_storage.exists(
-                                evidence.last_revision.attachment.name
-                            )
+                        last = evidence.last_revision
+                        if not last:
+                            continue
+                        files = list(last.files.order_by("ordering", "created_at"))
+                        if files:
+                            for ef in files:
+                                if not ef.file or not default_storage.exists(
+                                    ef.file.name
+                                ):
+                                    continue
+                                with default_storage.open(ef.file.name) as src:
+                                    name = ef.original_name or os.path.basename(
+                                        ef.file.name
+                                    )
+                                    zipf.writestr(
+                                        os.path.join(
+                                            "evidences",
+                                            sanitize_filename(evidence.name),
+                                            name,
+                                        ),
+                                        src.read(),
+                                    )
+                        elif last.attachment and default_storage.exists(
+                            last.attachment.name
                         ):
                             with default_storage.open(
-                                evidence.last_revision.attachment.name
+                                last.attachment.name
                             ) as attachment_file:
                                 zipf.writestr(
                                     os.path.join(
                                         "evidences",
-                                        os.path.basename(
-                                            evidence.last_revision.attachment.name
-                                        ),
+                                        os.path.basename(last.attachment.name),
                                     ),
                                     attachment_file.read(),
                                 )

@@ -64,6 +64,7 @@ router.register(r"evidences", EvidenceViewSet, basename="evidences")
 router.register(
     r"evidence-revisions", EvidenceRevisionViewSet, basename="evidence-revisions"
 )
+router.register(r"evidence-files", EvidenceFileViewSet, basename="evidence-files")
 router.register(
     r"compliance-assessments",
     ComplianceAssessmentViewSet,

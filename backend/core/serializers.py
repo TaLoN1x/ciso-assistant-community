@@ -2167,6 +2167,39 @@ class RequirementNodeWriteSerializer(BaseModelSerializer):
         exclude = ["created_at", "updated_at"]
 
 
+class EvidenceFileSerializer(BaseModelSerializer):
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EvidenceFile
+        fields = [
+            "id",
+            "original_name",
+            "sha256",
+            "size",
+            "ordering",
+            "url",
+            "created_at",
+        ]
+
+    def get_url(self, obj):
+        return obj.file.url if obj.file else None
+
+
+class EvidenceFileReadSerializer(EvidenceFileSerializer):
+    revision = FieldsRelatedField()
+    folder = FieldsRelatedField()
+
+    class Meta(EvidenceFileSerializer.Meta):
+        fields = EvidenceFileSerializer.Meta.fields + ["revision", "folder"]
+
+
+class EvidenceFileWriteSerializer(BaseModelSerializer):
+    class Meta:
+        model = EvidenceFile
+        fields = ["revision", "ordering"]
+
+
 class EvidenceReadSerializer(BaseModelSerializer):
     path = PathField(read_only=True)
     attachment = serializers.SerializerMethodField()
@@ -2181,9 +2214,14 @@ class EvidenceReadSerializer(BaseModelSerializer):
     link = serializers.SerializerMethodField()
 
     def get_attachment(self, obj):
-        last_revision = obj.last_revision
-        if last_revision and last_revision.attachment:
-            return last_revision.attachment.url
+        last = obj.last_revision
+        if not last:
+            return None
+        first = last.files.order_by("ordering", "created_at").first()
+        if first and first.file:
+            return first.file.url
+        if last.attachment:
+            return last.attachment.url
         return None
 
     def get_link(self, obj):
@@ -2259,13 +2297,16 @@ class EvidenceWriteSerializer(BaseModelSerializer):
         """Include link and attachment from the latest revision in the response"""
         data = super().to_representation(instance)
 
-        # Add revision fields to the response
-        latest_revision = instance.last_revision
-        if latest_revision:
-            data["link"] = latest_revision.link
-            data["attachment"] = (
-                latest_revision.attachment.url if latest_revision.attachment else None
-            )
+        latest = instance.last_revision
+        if latest:
+            data["link"] = latest.link
+            first = latest.files.order_by("ordering", "created_at").first()
+            if first and first.file:
+                data["attachment"] = first.file.url
+            elif latest.attachment:
+                data["attachment"] = latest.attachment.url
+            else:
+                data["attachment"] = None
         else:
             data["link"] = None
             data["attachment"] = None
@@ -2296,6 +2337,10 @@ class EvidenceRevisionReadSerializer(BaseModelSerializer):
     folder = FieldsRelatedField()
     str = serializers.CharField(source="__str__")
     task_node = FieldsRelatedField()
+    uploaded_by = FieldsRelatedField()
+    reviewed_by = FieldsRelatedField()
+    files = EvidenceFileSerializer(many=True, read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     class Meta:
         model = EvidenceRevision
@@ -2308,14 +2353,29 @@ class EvidenceRevisionWriteSerializer(BaseModelSerializer):
         fields = "__all__"
 
     def create(self, validated_data):
+        from global_settings.utils import evidence_requires_review
+
         evidence = validated_data["evidence"]
         max_version = EvidenceRevision.objects.filter(evidence=evidence).aggregate(
             models.Max("version")
         )["version__max"]
         validated_data["version"] = (max_version or 0) + 1
-        # Update evidence status to in_review when a new revision is submitted
-        evidence.status = Evidence.Status.IN_REVIEW
-        evidence.save()
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        if user and getattr(user, "is_authenticated", False):
+            validated_data.setdefault("uploaded_by", user)
+
+        if not evidence_requires_review():
+            validated_data.setdefault("status", Evidence.Status.APPROVED)
+            if user and getattr(user, "is_authenticated", False):
+                validated_data.setdefault("reviewed_by", user)
+                validated_data.setdefault("reviewed_at", timezone.now())
+        else:
+            validated_data.setdefault("status", Evidence.Status.IN_REVIEW)
+
+        evidence.status = validated_data["status"]
+        evidence.save(update_fields=["status"])
         return super().create(validated_data)
 
 

@@ -139,6 +139,50 @@ def _connect_evidence_signal(ff_is_enabled):
         ingest_document(str(doc.id))
         logger.info("Auto-queued evidence attachment for indexing: %s", doc.filename)
 
+    try:
+        EvidenceFile = apps.get_model("core", "EvidenceFile")
+    except LookupError:
+        return
+
+    @receiver(post_save, sender=EvidenceFile, weak=False)
+    def on_evidence_file_save(sender, instance, created, **kwargs):
+        if not created or not ff_is_enabled("chat_mode"):
+            return
+        if not instance.file:
+            return
+        from django.contrib.contenttypes.models import ContentType
+        from .models import IndexedDocument
+        from .tasks import ingest_document
+        import mimetypes
+
+        mime_type, _ = mimetypes.guess_type(
+            instance.original_name or instance.file.name
+        )
+        if not mime_type:
+            return
+        from .extractors import get_extractor
+
+        if not get_extractor(mime_type):
+            return
+
+        ct = ContentType.objects.get_for_model(EvidenceFile)
+        if IndexedDocument.objects.filter(
+            source_content_type=ct, source_object_id=instance.id
+        ).exists():
+            return
+
+        doc = IndexedDocument.objects.create(
+            folder=instance.folder,
+            file=instance.file,
+            filename=instance.original_name or instance.file.name.split("/")[-1],
+            content_type=mime_type,
+            source_type=IndexedDocument.SourceType.EVIDENCE,
+            source_content_type=ct,
+            source_object_id=instance.id,
+        )
+        ingest_document(str(doc.id))
+        logger.info("Auto-queued evidence file for indexing: %s", doc.filename)
+
 
 # Do NOT call connect_signals() at module level.
 # It is called from ChatConfig.ready() in apps.py, which ensures

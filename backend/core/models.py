@@ -4650,9 +4650,13 @@ class EvidenceFile(AbstractBaseModel, FolderMixin):
 
     def delete(self, using=None, keep_parents=False):
         revision = self.revision
-        if self.file:
-            self.file.delete(save=False)
+        path = self.file.name if self.file else None
         result = super().delete(using=using, keep_parents=keep_parents)
+        if path and not EvidenceFile.objects.filter(file=path).exists():
+            try:
+                default_storage.delete(path)
+            except Exception:
+                pass
         revision.recompute_manifest_hash()
         return result
 
