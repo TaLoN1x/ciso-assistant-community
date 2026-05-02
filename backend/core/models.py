@@ -961,11 +961,12 @@ class LibraryUpdater:
                 order_id = 0
                 all_fields_to_update = set()
 
-                # Check if score boundaries changed
+                # Check if score boundaries changed (triggers warning + strategy prompt)
                 score_boundaries_changed = (
                     prev_min != new_framework.min_score
                     or prev_max != new_framework.max_score
                 )
+                scores_definition_changed = prev_def != new_framework.scores_definition
 
                 # If scores changed and no strategy provided, raise exception for frontend to handle
                 if (
@@ -977,11 +978,7 @@ class LibraryUpdater:
                     affected_cas = [
                         ca
                         for ca in compliance_assessments
-                        if (
-                            ca.min_score == prev_min
-                            and ca.max_score == prev_max
-                            and ca.scores_definition == prev_def
-                        )
+                        if (ca.min_score == prev_min and ca.max_score == prev_max)
                     ]
 
                     if affected_cas:
@@ -1002,19 +999,25 @@ class LibraryUpdater:
 
                 # Update compliance assessments score boundaries
                 compliance_assessments_to_update = []
+                ca_with_scale_change = []
                 ca_bounds = {}
                 for ca in compliance_assessments:
                     # preserve user overrides: update only if CA still equals previous framework defaults
-                    still_on_prev_defaults = (
-                        ca.min_score == prev_min
-                        and ca.max_score == prev_max
-                        and ca.scores_definition == prev_def
+                    scale_on_prev_defaults = (
+                        ca.min_score == prev_min and ca.max_score == prev_max
                     )
+                    definition_on_prev_defaults = ca.scores_definition == prev_def
 
-                    if still_on_prev_defaults and score_boundaries_changed:
+                    needs_update = False
+                    if scale_on_prev_defaults and score_boundaries_changed:
                         ca.min_score = new_framework.min_score
                         ca.max_score = new_framework.max_score
+                        needs_update = True
+                        ca_with_scale_change.append(ca)
+                    if definition_on_prev_defaults and scores_definition_changed:
                         ca.scores_definition = new_framework.scores_definition
+                        needs_update = True
+                    if needs_update:
                         compliance_assessments_to_update.append(ca)
 
                 if compliance_assessments_to_update:
@@ -1044,7 +1047,7 @@ class LibraryUpdater:
                                 )
                             ),
                         )
-                        for ca in compliance_assessments_to_update
+                        for ca in ca_with_scale_change
                     }
 
                 # main loop by requirement_node
@@ -1123,8 +1126,7 @@ class LibraryUpdater:
                         if (
                             ra.is_scored
                             and ra.score is not None
-                            and ra.compliance_assessment
-                            in compliance_assessments_to_update
+                            and ra.compliance_assessment in ca_with_scale_change
                         ):
                             default_min = (
                                 0
@@ -7909,6 +7911,12 @@ class RequirementAssessment(AbstractBaseModel, FolderMixin, ETADueDateMixin):
         )
         GOOD_PRACTICE = "good_practice", "Good practice"
 
+    class RespondentAlignment(models.TextChoices):
+        YES = "yes", _("Yes")
+        NO = "no", _("No")
+        IN_PROGRESS = "in_progress", _("In progress")
+        NOT_APPLICABLE = "not_applicable", _("Not applicable")
+
     status = models.CharField(
         max_length=100,
         choices=Status.choices,
@@ -7947,6 +7955,13 @@ class RequirementAssessment(AbstractBaseModel, FolderMixin, ETADueDateMixin):
         related_name="requirement_assessments",
     )
     observation = models.TextField(null=True, blank=True, verbose_name=_("Observation"))
+    respondent_alignment = models.CharField(
+        max_length=32,
+        choices=RespondentAlignment.choices,
+        blank=True,
+        null=True,
+        verbose_name=_("Respondent alignment"),
+    )
     compliance_assessment = models.ForeignKey(
         ComplianceAssessment,
         on_delete=models.CASCADE,
@@ -9362,11 +9377,38 @@ class Actor(AbstractBaseModel):
         return str(self.specific)
 
 
+class Preset(NameDescriptionMixin, FolderMixin, EditableMixin):
+    """Template definition. Library-backed (urn set) or user-authored (urn null)."""
+
+    urn = models.CharField(max_length=255, null=True, blank=True, unique=True)
+    ref_id = models.CharField(max_length=255, null=True, blank=True)
+    version = models.IntegerField(default=1)
+    provider = models.CharField(max_length=255, null=True, blank=True)
+    translations = models.JSONField(default=dict, blank=True)
+    profile = models.JSONField(default=dict, blank=True)
+    feature_flags = models.JSONField(default=dict, blank=True)
+    scaffolded_objects = models.JSONField(default=list, blank=True)
+    steps = models.JSONField(default=list, blank=True)
+    dependencies = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class PresetJourney(NameDescriptionMixin, FolderMixin):
     """Instance created when a user applies a preset definition."""
 
-    urn = models.CharField(max_length=255)
-    version = models.IntegerField(default=1)
+    preset = models.ForeignKey(
+        Preset,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="journeys",
+    )
+    applied_version = models.IntegerField(default=1)
     object_refs = models.JSONField(default=dict)
     applied_at = models.DateTimeField(auto_now_add=True)
     applied_by = models.ForeignKey(
@@ -9554,6 +9596,10 @@ auditlog.register(
     RequirementAssignment,
     exclude_fields=common_exclude,
     m2m_fields={"actor", "requirement_assessments"},
+)
+auditlog.register(
+    Preset,
+    exclude_fields=common_exclude,
 )
 auditlog.register(
     PresetJourney,
