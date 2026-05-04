@@ -7462,7 +7462,546 @@ class FolderViewSet(BaseModelViewSet):
             my_map[item.name] = item.id
         return Response(my_map)
 
-    def _get_quality_checks_for_folders(self, folders, user):
+    def _serialize_quality_check_object(self, obj):
+        """Return the minimal object shape the X-rays UI needs for links and labels."""
+        # X-rays only needs stable links and labels, not full read serializers.
+        return {
+            "id": str(obj.id),
+            "name": getattr(obj, "name", None) or str(obj),
+        }
+
+    def _quality_check_finding(self, msgid, obj_type, obj_id, obj_name, link=None):
+        """Create a compact finding compatible with the existing X-rays component."""
+        finding = {
+            "msgid": msgid,
+            "obj_type": obj_type,
+            "object": {
+                "id": str(obj_id),
+                "name": obj_name or "",
+            },
+        }
+        if link:
+            finding["link"] = link
+        return finding
+
+    def _empty_quality_check(self):
+        """Create the mutable quality_check container used while aggregating findings."""
+        return {
+            "errors": [],
+            "warnings": [],
+            "info": [],
+            "count": 0,
+        }
+
+    def _finalize_quality_check_count(self, quality_check):
+        """Update the total finding count after all severities have been populated."""
+        quality_check["count"] = sum(
+            len(quality_check[quality_check_type])
+            for quality_check_type in ("errors", "warnings", "info")
+        )
+
+    def _add_quality_check_finding(
+        self, quality_check, severity, msgid, obj_type, obj_id, obj_name, link=None
+    ):
+        """Append one compact finding to the requested severity bucket."""
+        quality_check[severity].append(
+            self._quality_check_finding(msgid, obj_type, obj_id, obj_name, link)
+        )
+
+    def _get_light_quality_checks_for_folders(
+        self, folders, viewable_ca_ids, viewable_ra_ids
+    ):
+        """
+        Build the lightweight payload used by the X-rays page.
+
+        The full quality_check() methods serialize many nested objects and run repeated
+        per-object queries. This path keeps the response shape expected by the frontend,
+        but only returns id/name/msgid/link and computes expensive checks in grouped
+        queries where possible.
+        """
+        folders = list(folders)
+        folder_ids = [folder.id for folder in folders]
+        res = {
+            str(folder.id): {
+                "folder": self._serialize_quality_check_object(folder),
+                "compliance_assessments": {"objects": {}},
+                "risk_assessments": {"objects": {}},
+            }
+            for folder in folders
+        }
+
+        # Keep assessment-level data small and include author counts in the same query.
+        compliance_assessments = list(
+            ComplianceAssessment.objects.filter(
+                folder_id__in=folder_ids, id__in=viewable_ca_ids
+            )
+            .only("id", "folder_id", "name", "status")
+            .annotate(authors_count=Count("authors", distinct=True))
+        )
+
+        # Risk scenarios need their controls and acceptances. Prefetching them once
+        # avoids N+1 queries while preserving the existing rule semantics.
+        risk_scenario_qs = RiskScenario.objects.only(
+            "id",
+            "risk_assessment_id",
+            "name",
+            "current_level",
+            "current_proba",
+            "current_impact",
+            "residual_level",
+            "residual_proba",
+            "residual_impact",
+            "treatment",
+        ).prefetch_related(
+            Prefetch(
+                "applied_controls",
+                queryset=AppliedControl.objects.only(
+                    "id", "name", "status", "eta", "effort", "cost", "link"
+                ),
+            ),
+            Prefetch(
+                "existing_applied_controls",
+                queryset=AppliedControl.objects.only("id", "name", "status"),
+            ),
+            Prefetch(
+                "riskacceptance_set",
+                queryset=RiskAcceptance.objects.only("id", "name", "expiry_date"),
+            ),
+        )
+        risk_assessments = list(
+            RiskAssessment.objects.filter(
+                folder_id__in=folder_ids, id__in=viewable_ra_ids
+            )
+            .only("id", "folder_id", "name", "status")
+            .annotate(authors_count=Count("authors", distinct=True))
+            .prefetch_related(Prefetch("risk_scenarios", queryset=risk_scenario_qs))
+        )
+
+        # Store mutable quality_check dicts by assessment id so helper queries can
+        # append findings without rebuilding the nested response.
+        compliance_quality_checks_by_id = {}
+        for ca in compliance_assessments:
+            ca_obj = self._serialize_quality_check_object(ca)
+            quality_check = self._empty_quality_check()
+            compliance_quality_checks_by_id[str(ca.id)] = quality_check
+            res[str(ca.folder_id)]["compliance_assessments"]["objects"][str(ca.id)] = {
+                "object": ca_obj,
+                "quality_check": quality_check,
+            }
+            if ca.status == Assessment.Status.IN_PROGRESS:
+                self._add_quality_check_finding(
+                    quality_check,
+                    "info",
+                    "complianceAssessmentInProgress",
+                    "complianceassessment",
+                    ca.id,
+                    ca.name,
+                )
+            if ca.authors_count == 0:
+                self._add_quality_check_finding(
+                    quality_check,
+                    "info",
+                    "complianceAssessmentNoAuthor",
+                    "complianceassessment",
+                    ca.id,
+                    ca.name,
+                )
+
+        self._add_light_compliance_assessment_findings(
+            compliance_assessments, compliance_quality_checks_by_id
+        )
+
+        for ra in risk_assessments:
+            ra_obj = self._serialize_quality_check_object(ra)
+            quality_check = self._empty_quality_check()
+            res[str(ra.folder_id)]["risk_assessments"]["objects"][str(ra.id)] = {
+                "object": ra_obj,
+                "quality_check": quality_check,
+            }
+            if ra.status == Assessment.Status.IN_PROGRESS:
+                self._add_quality_check_finding(
+                    quality_check,
+                    "info",
+                    "riskAssessmentInProgress",
+                    "risk_assessment",
+                    ra.id,
+                    ra.name,
+                )
+            if ra.authors_count == 0:
+                self._add_quality_check_finding(
+                    quality_check,
+                    "info",
+                    "riskAssessmentNoAuthor",
+                    "risk_assessment",
+                    ra.id,
+                    ra.name,
+                )
+
+            scenarios = list(ra.risk_scenarios.all())
+            if not scenarios:
+                self._add_quality_check_finding(
+                    quality_check,
+                    "warnings",
+                    "riskAssessmentEmpty",
+                    "risk_assessment",
+                    ra.id,
+                    ra.name,
+                )
+
+            seen_applied_controls = {}
+            seen_risk_acceptances = {}
+            for scenario in scenarios:
+                applied_controls = list(scenario.applied_controls.all())
+                existing_controls = list(scenario.existing_applied_controls.all())
+
+                # A control or acceptance can be attached to several scenarios in the
+                # same assessment; report its own quality findings only once.
+                for applied_control in applied_controls:
+                    seen_applied_controls[str(applied_control.id)] = applied_control
+                for risk_acceptance in scenario.riskacceptance_set.all():
+                    seen_risk_acceptances[str(risk_acceptance.id)] = risk_acceptance
+
+                self._add_light_risk_scenario_findings(
+                    quality_check, scenario, applied_controls, existing_controls
+                )
+
+            for applied_control in seen_applied_controls.values():
+                self._add_light_risk_applied_control_findings(
+                    quality_check, applied_control
+                )
+            for risk_acceptance in seen_risk_acceptances.values():
+                self._add_light_risk_acceptance_findings(
+                    quality_check, risk_acceptance
+                )
+            self._finalize_quality_check_count(quality_check)
+
+        for quality_check in compliance_quality_checks_by_id.values():
+            self._finalize_quality_check_count(quality_check)
+
+        return res
+
+    def _add_light_risk_scenario_findings(
+        self, quality_check, scenario, applied_controls, existing_controls
+    ):
+        """Add scenario-level risk findings to a lightweight risk assessment payload."""
+        # Mirrors the risk scenario rules from RiskAssessment.quality_check(), but
+        # stores compact finding objects to keep the X-rays response small.
+        if scenario.current_level < 0:
+            self._add_quality_check_finding(
+                quality_check,
+                "warnings",
+                "riskScenarioNoCurrentLevel",
+                "riskscenario",
+                scenario.id,
+                scenario.name,
+                f"risk-scenarios/{scenario.id}",
+            )
+        if scenario.residual_level < 0 and scenario.current_level >= 0:
+            self._add_quality_check_finding(
+                quality_check,
+                "errors",
+                "riskScenarioNoResidualLevel",
+                "riskscenario",
+                scenario.id,
+                scenario.name,
+            )
+        if scenario.residual_level > scenario.current_level:
+            self._add_quality_check_finding(
+                quality_check,
+                "errors",
+                "riskScenarioResidualHigherThanCurrent",
+                "riskscenario",
+                scenario.id,
+                scenario.name,
+                f"risk-scenarios/{scenario.id}",
+            )
+        if scenario.residual_proba > scenario.current_proba:
+            self._add_quality_check_finding(
+                quality_check,
+                "errors",
+                "riskScenarioResidualProbaHigherThanCurrent",
+                "riskscenario",
+                scenario.id,
+                scenario.name,
+                f"risk-scenarios/{scenario.id}",
+            )
+        if scenario.residual_impact > scenario.current_impact:
+            self._add_quality_check_finding(
+                quality_check,
+                "errors",
+                "riskScenarioResidualImpactHigherThanCurrent",
+                "riskscenario",
+                scenario.id,
+                scenario.name,
+                f"risk-scenarios/{scenario.id}",
+            )
+        if (
+            scenario.residual_level < scenario.current_level
+            or scenario.residual_proba < scenario.current_proba
+            or scenario.residual_impact < scenario.current_impact
+        ) and scenario.residual_level >= 0 and not applied_controls:
+            self._add_quality_check_finding(
+                quality_check,
+                "errors",
+                "riskScenarioResidualLoweredWithoutMeasures",
+                "riskscenario",
+                scenario.id,
+                scenario.name,
+                f"risk-scenarios/{scenario.id}",
+            )
+
+        existing_by_id = {str(control.id): control for control in existing_controls}
+        applied_by_id = {str(control.id): control for control in applied_controls}
+        for control_id in existing_by_id.keys() & applied_by_id.keys():
+            duplicate_control = existing_by_id[control_id]
+            self._add_quality_check_finding(
+                quality_check,
+                "errors",
+                "controlInBothLists",
+                "appliedcontrol",
+                duplicate_control.id,
+                duplicate_control.name,
+                f"applied-controls/{duplicate_control.id}",
+            )
+
+        for existing_control in existing_controls:
+            if existing_control.status != AppliedControl.Status.ACTIVE:
+                self._add_quality_check_finding(
+                    quality_check,
+                    "errors",
+                    "existingControlNotActive",
+                    "appliedcontrol",
+                    existing_control.id,
+                    existing_control.name,
+                    f"applied-controls/{existing_control.id}",
+                )
+
+    def _add_light_risk_applied_control_findings(self, quality_check, applied_control):
+        """Add applied-control findings used by risk assessment quality checks."""
+        if (
+            not applied_control.eta
+            and applied_control.status != AppliedControl.Status.ACTIVE
+        ):
+            self._add_quality_check_finding(
+                quality_check,
+                "warnings",
+                "appliedControlNoETA",
+                "appliedcontrol",
+                applied_control.id,
+                applied_control.name,
+                f"applied-controls/{applied_control.id}",
+            )
+        elif (
+            applied_control.eta
+            and applied_control.status != AppliedControl.Status.ACTIVE
+            and date.today() > applied_control.eta
+        ):
+            self._add_quality_check_finding(
+                quality_check,
+                "errors",
+                "appliedControlETAInPast",
+                "appliedcontrol",
+                applied_control.id,
+                applied_control.name,
+                f"applied-controls/{applied_control.id}",
+            )
+
+        if not applied_control.effort:
+            self._add_quality_check_finding(
+                quality_check,
+                "warnings",
+                "appliedControlNoEffort",
+                "appliedcontrol",
+                applied_control.id,
+                applied_control.name,
+                f"applied-controls/{applied_control.id}",
+            )
+        if not applied_control.cost:
+            self._add_quality_check_finding(
+                quality_check,
+                "warnings",
+                "appliedControlNoCost",
+                "appliedcontrol",
+                applied_control.id,
+                applied_control.name,
+                f"applied-controls/{applied_control.id}",
+            )
+        if not applied_control.link:
+            self._add_quality_check_finding(
+                quality_check,
+                "info",
+                "appliedControlNoLink",
+                "appliedcontrol",
+                applied_control.id,
+                applied_control.name,
+                f"applied-controls/{applied_control.id}",
+            )
+
+    def _add_light_risk_acceptance_findings(self, quality_check, risk_acceptance):
+        """Add risk-acceptance expiry findings to a risk assessment payload."""
+        risk_acceptance_name = risk_acceptance.name or str(risk_acceptance.id)
+        if not risk_acceptance.expiry_date:
+            self._add_quality_check_finding(
+                quality_check,
+                "warnings",
+                "riskAcceptanceNoExpiryDate",
+                "appliedcontrol",
+                risk_acceptance.id,
+                risk_acceptance_name,
+                f"risk-acceptances/{risk_acceptance.id}",
+            )
+        elif date.today() > risk_acceptance.expiry_date:
+            self._add_quality_check_finding(
+                quality_check,
+                "errors",
+                "riskAcceptanceExpired",
+                "riskacceptance",
+                risk_acceptance.id,
+                risk_acceptance_name,
+                f"risk-acceptances/{risk_acceptance.id}",
+            )
+
+    def _add_light_compliance_assessment_findings(
+        self, compliance_assessments, quality_checks_by_id
+    ):
+        """Add requirement, control and evidence findings for compliance assessments."""
+        # Compliance checks are dominated by requirement assessments, controls and
+        # evidences. Run them as set-based queries instead of looping through each
+        # compliance assessment and serializing each object.
+        compliance_assessment_ids = [
+            assessment.id for assessment in compliance_assessments
+        ]
+        if not compliance_assessment_ids:
+            return
+
+        requirement_assessments = (
+            RequirementAssessment.objects.filter(
+                compliance_assessment_id__in=compliance_assessment_ids
+            )
+            .select_related("requirement")
+            .annotate(
+                applied_controls_count=Count("applied_controls", distinct=True),
+                direct_evidences_count=Count("evidences", distinct=True),
+                applied_control_evidences_count=Count(
+                    "applied_controls__evidences", distinct=True
+                ),
+            )
+        )
+        for requirement_assessment in requirement_assessments:
+            quality_check = quality_checks_by_id[
+                str(requirement_assessment.compliance_assessment_id)
+            ]
+            requirement_assessment_name = str(requirement_assessment)
+
+            # direct_evidences_count + applied_control_evidences_count replaces
+            # RequirementAssessment.has_evidence(), which otherwise runs a query per row.
+            if (
+                requirement_assessment.requirement.assessable
+                and requirement_assessment.result == RequirementAssessment.Result.COMPLIANT
+                and requirement_assessment.direct_evidences_count == 0
+                and requirement_assessment.applied_control_evidences_count == 0
+            ):
+                self._add_quality_check_finding(
+                    quality_check,
+                    "warnings",
+                    "requirementAssessmentCompliantNoEvidence",
+                    "requirementassessment",
+                    requirement_assessment.id,
+                    requirement_assessment_name,
+                    f"requirement-assessments/{requirement_assessment.id}",
+                )
+            if (
+                requirement_assessment.result
+                in (
+                    RequirementAssessment.Result.COMPLIANT,
+                    RequirementAssessment.Result.PARTIALLY_COMPLIANT,
+                )
+                and requirement_assessment.applied_controls_count == 0
+            ):
+                self._add_quality_check_finding(
+                    quality_check,
+                    "warnings",
+                    "requirementAssessmentNoAppliedControl",
+                    "requirementassessment",
+                    requirement_assessment.id,
+                    requirement_assessment_name,
+                    f"requirement-assessments/{requirement_assessment.id}",
+                )
+
+        applied_controls_without_reference = (
+            AppliedControl.objects.filter(
+                requirement_assessments__compliance_assessment_id__in=(
+                    compliance_assessment_ids
+                ),
+                reference_control__isnull=True,
+            )
+            .values(
+                "id",
+                "name",
+                "requirement_assessments__compliance_assessment_id",
+            )
+            .distinct()
+        )
+        for applied_control in applied_controls_without_reference:
+            quality_check = quality_checks_by_id[
+                str(applied_control["requirement_assessments__compliance_assessment_id"])
+            ]
+            self._add_quality_check_finding(
+                quality_check,
+                "info",
+                "appliedControlNoReferenceControl",
+                "appliedcontrol",
+                applied_control["id"],
+                applied_control["name"],
+                f"applied-controls/{applied_control['id']}",
+            )
+
+        revisions_with_attachment = EvidenceRevision.objects.filter(
+            evidence_id=OuterRef("pk"), attachment__isnull=False
+        ).exclude(attachment="")
+        revisions_with_link = EvidenceRevision.objects.filter(
+            evidence_id=OuterRef("pk"), link__isnull=False
+        ).exclude(link="")
+
+        # Exists() checks the revisions in SQL, avoiding one attachment/link lookup
+        # query for every evidence object.
+        evidences_without_file = (
+            Evidence.objects.filter(
+                applied_controls__requirement_assessments__compliance_assessment_id__in=(
+                    compliance_assessment_ids
+                )
+            )
+            .annotate(
+                has_attachment=Exists(revisions_with_attachment),
+                has_link=Exists(revisions_with_link),
+            )
+            .filter(has_attachment=False, has_link=False)
+            .values(
+                "id",
+                "name",
+                "applied_controls__requirement_assessments__compliance_assessment_id",
+            )
+            .distinct()
+        )
+        for evidence in evidences_without_file:
+            quality_check = quality_checks_by_id[
+                str(
+                    evidence[
+                        "applied_controls__requirement_assessments__compliance_assessment_id"
+                    ]
+                )
+            ]
+            self._add_quality_check_finding(
+                quality_check,
+                "warnings",
+                "evidenceNoFile",
+                "evidence",
+                evidence["id"],
+                evidence["name"],
+                f"evidences/{evidence['id']}",
+            )
+
+    def _get_quality_checks_for_folders(self, folders, user, light=False):
         """
         Helper method to aggregate quality checks for a queryset of folders.
         Enforces RBAC for both folders and assessments.
@@ -7475,6 +8014,13 @@ class FolderViewSet(BaseModelViewSet):
             folder=Folder.get_root_folder(), user=user, object_type=RiskAssessment
         )
 
+        # The X-rays route uses this fast path. The default API response stays
+        # unchanged for any consumer that still needs the complete serialized objects.
+        if light:
+            return self._get_light_quality_checks_for_folders(
+                folders, viewable_ca_ids, viewable_ra_ids
+            )
+
         res = {
             str(f.id): {
                 "folder": FolderReadSerializer(f).data,
@@ -7486,16 +8032,18 @@ class FolderViewSet(BaseModelViewSet):
         for ca in ComplianceAssessment.objects.filter(
             folder__in=folders, id__in=viewable_ca_ids
         ):
+            quality_check = ca.quality_check()
             res[str(ca.folder.id)]["compliance_assessments"]["objects"][str(ca.id)] = {
                 "object": ComplianceAssessmentReadSerializer(ca).data,
-                "quality_check": ca.quality_check(),
+                "quality_check": quality_check,
             }
         for ra in RiskAssessment.objects.filter(
             folder__in=folders, id__in=viewable_ra_ids
         ):
+            quality_check = ra.quality_check()
             res[str(ra.folder.id)]["risk_assessments"]["objects"][str(ra.id)] = {
                 "object": RiskAssessmentReadSerializer(ra).data,
-                "quality_check": ra.quality_check(),
+                "quality_check": quality_check,
             }
         return res
 
@@ -7510,8 +8058,13 @@ class FolderViewSet(BaseModelViewSet):
         folders = Folder.objects.filter(id__in=viewable_objects).exclude(
             content_type=Folder.ContentType.ROOT
         )
+        light = request.query_params.get("light", "false").lower() == "true"
         return Response(
-            {"results": self._get_quality_checks_for_folders(folders, request.user)}
+            {
+                "results": self._get_quality_checks_for_folders(
+                    folders, request.user, light=light
+                )
+            }
         )
 
     @action(detail=True, methods=["get"], url_path="quality_check")
@@ -7526,8 +8079,9 @@ class FolderViewSet(BaseModelViewSet):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         folder = self.get_object()
+        light = request.query_params.get("light", "false").lower() == "true"
         result = self._get_quality_checks_for_folders(
-            Folder.objects.filter(pk=folder.pk), request.user
+            Folder.objects.filter(pk=folder.pk), request.user, light=light
         )
         return Response(result.get(str(folder.id), {}))
 

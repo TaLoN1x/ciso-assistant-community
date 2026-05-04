@@ -11,25 +11,26 @@
 
 	let { data }: Props = $props();
 
+	// Folder tabs need severity totals across all assessments; flatten each
+	// assessment's compact quality_check arrays without cloning on every step.
 	const aggregateQualityChecks = (item: any) => {
-		const types = ['errors', 'warnings', 'info'];
-		const result = {};
+		const types = ['errors', 'warnings', 'info'] as const;
+		const result: Record<(typeof types)[number], any[]> = {
+			errors: [],
+			warnings: [],
+			info: []
+		};
 
 		if (!item?.objects || typeof item.objects !== 'object') {
-			types.forEach((type) => {
-				result[type] = [];
-			});
 			return result;
 		}
 
-		types.forEach((type) => {
-			result[type] = Object.entries(item.objects).reduce((acc, [key, value]) => {
-				if (key !== 'object' && value?.quality_check?.[type]) {
-					// if key === 'quality_check'
-					acc = [...acc, ...value.quality_check[type]];
+		Object.values(item.objects).forEach((value) => {
+			types.forEach((type) => {
+				if (value?.quality_check?.[type]) {
+					result[type].push(...value.quality_check[type]);
 				}
-				return acc;
-			}, []);
+			});
 		});
 
 		return result;
@@ -48,7 +49,7 @@
 
 		issues.forEach((issue) => {
 			if (!issue?.msgid || !issue?.object) {
-				return; // Skip malformed issues
+				return;
 			}
 
 			const key = issue.msgid;
