@@ -59,7 +59,7 @@ else
   sleep 50
 
   echo "Initialize your superuser account..."
-  docker compose exec backend uv run python manage.py createsuperuser
+  docker compose exec backend python manage.py createsuperuser
 
   echo "🚀 CISO Assistant is ready!"
   echo "Connect to CISO Assistant on https://localhost:8443"
