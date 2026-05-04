@@ -250,7 +250,7 @@ Read more here: [AI engine](backend/chat/README.md)
 106. OWASP Top 10 Web - Threat catalog 🐝🌐
 107. OWASP MAS Threat Modelling Guide - Threat catalog 🐝📱
 108. CISA Cybersecurity Performance Goals (CPG) v2.0 🇺🇸
-109. ANSSI : Référentiel Cyber France pour la réglmentation NIS2 (ReCyF) 🇫🇷
+109. ANSSI : Référentiel Cyber France pour la réglementation NIS2 (ReCyF) 🇫🇷
 110. Cadre Conformité Cyber France (3CF) v3.1 (2026) ✈️🇫🇷
 111. Règles OIV - Secteur « Transport aérien » (2016) ✈️🇫🇷
 

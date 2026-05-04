@@ -151,7 +151,7 @@ jobs:
           done
       - name: Config the Docker app
         run: |
-          docker compose -f docker-compose-build.yml exec backend /bin/bash -c "DJANGO_SUPERUSER_EMAIL=admin@tests.com DJANGO_SUPERUSER_PASSWORD=1234 uv run python manage.py createsuperuser --noinput && exit 0"
+          docker compose -f docker-compose-build.yml exec -T backend /bin/bash -c "DJANGO_SUPERUSER_EMAIL=admin@tests.com DJANGO_SUPERUSER_PASSWORD=1234 uv run python manage.py createsuperuser --noinput && exit 0"
       - name: Run tests
         working-directory: ${{ env.frontend-directory }}
         run: |
@@ -297,7 +297,7 @@ jobs:
         env:
           SETTINGS_MODULE: ${{ env.enterprise-backend-settings-module }}
         run: |
-          docker compose -f enterprise/docker-compose-build.yml exec backend /bin/bash -c "DJANGO_SUPERUSER_EMAIL=admin@tests.com DJANGO_SUPERUSER_PASSWORD=1234 uv run python manage.py createsuperuser --noinput --settings="$SETTINGS_MODULE" && exit 0"
+          docker compose -f enterprise/docker-compose-build.yml exec -T backend /bin/bash -c "DJANGO_SUPERUSER_EMAIL=admin@tests.com DJANGO_SUPERUSER_PASSWORD=1234 uv run python manage.py createsuperuser --noinput --settings="$SETTINGS_MODULE" && exit 0"
       - name: Run tests
         working-directory: ${{ env.frontend-directory }}
         run: |

@@ -52,14 +52,14 @@ RUN apt-get update && apt-get install -y \
 COPY backend/pyproject.toml backend/uv.lock ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=cache,target=/root/.cache/pip \
-    uv sync --locked --no-dev \
+  --mount=type=cache,target=/root/.cache/pip \
+  uv sync --locked --no-dev \
   && pip install torch --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps \
-  && pip uninstall cuda-bindings cuda-pathfinder cuda-toolkit \
-     nvidia-cublas nvidia-cuda-cupti nvidia-cuda-nvrtc nvidia-cuda-runtime \
-     nvidia-cudnn-cu13 nvidia-cufft nvidia-cufile nvidia-curand nvidia-cusolver \
-     nvidia-cusparse nvidia-cusparselt-cu13 nvidia-nccl-cu13 nvidia-nvjitlink \
-     nvidia-nvshmem-cu13 nvidia-nvtx triton 2>/dev/null
+  && pip uninstall -y cuda-bindings cuda-pathfinder cuda-toolkit \
+  nvidia-cublas nvidia-cuda-cupti nvidia-cuda-nvrtc nvidia-cuda-runtime \
+  nvidia-cudnn-cu13 nvidia-cufft nvidia-cufile nvidia-curand nvidia-cusolver \
+  nvidia-cusparse nvidia-cusparselt-cu13 nvidia-nccl-cu13 nvidia-nvjitlink \
+  nvidia-nvshmem-cu13 nvidia-nvtx triton 2>/dev/null
 
 COPY backend /code/
 COPY enterprise/backend/enterprise_core /code/enterprise_core
