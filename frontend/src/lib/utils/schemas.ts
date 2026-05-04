@@ -215,6 +215,7 @@ export const RiskScenarioSchema = z.object({
 	threats: z.string().uuid().optional().array().optional(),
 	assets: z.string().uuid().optional().array().optional(),
 	vulnerabilities: z.string().uuid().optional().array().optional(),
+	incidents: z.string().uuid().optional().array().optional(),
 	owner: z.string().uuid().optional().array().optional(),
 	security_exceptions: z.string().uuid().optional().array().optional(),
 	risk_origin: z.string().uuid().optional().nullable(),
@@ -272,6 +273,7 @@ export const AppliedControlSchema = z.object({
 	filtering_labels: z.string().optional().array().optional(),
 	findings: z.string().uuid().optional().array().optional(),
 	task_templates: z.string().uuid().optional().array().optional(),
+	incidents: z.string().uuid().optional().array().optional(),
 	observation: z.string().optional().nullable(),
 	integration_config: z.string().optional().nullable(),
 	remote_object_id: z.string().optional().nullable(),
@@ -429,6 +431,7 @@ export const RequirementAssessmentSchema = z.object({
 	compliance_assessment: z.string(),
 	applied_controls: z.array(z.string().uuid().optional()).optional(),
 	observation: z.string().optional().nullable(),
+	respondent_alignment: z.string().optional().nullable(),
 	security_exceptions: z.string().uuid().optional().array().optional(),
 	noRedirect: z.boolean().default(false),
 	nextRequirementAssessmentId: z.string().uuid().optional().nullable()
@@ -505,11 +508,19 @@ export const ComplianceAssessmentSchema = z.object({
 	status: z.string().optional().nullable(),
 	selected_implementation_groups: z.array(z.string().optional()).optional(),
 	framework: z.string(),
-	scoring_enabled: z.boolean().optional().default(false),
-	show_documentation_score: z.boolean().optional().default(false),
-	extended_result_enabled: z.boolean().optional().default(false),
-	progress_status_enabled: z.boolean().optional().default(true),
+	field_visibility: z
+		.record(
+			z.string(),
+			z.object({
+				auditor: z.enum(['edit', 'read', 'hidden']),
+				respondent: z.enum(['edit', 'read', 'hidden'])
+			})
+		)
+		.optional()
+		.default({}),
 	score_calculation_method: z.string().optional().default('average'),
+	target_score: z.number().optional().nullable(),
+	anchor_na_to_target: z.boolean().optional().default(false),
 	eta: z.union([z.literal('').transform(() => null), z.iso.date()]).nullish(),
 	due_date: z.union([z.literal('').transform(() => null), z.iso.date()]).nullish(),
 	authors: z.array(z.string().optional()).optional(),
@@ -659,7 +670,9 @@ export const FeatureFlagsSchema = z.object({
 	advanced_analytics: z.boolean().optional(),
 	comments: z.boolean().optional(),
 	journeys: z.boolean().optional(),
-	policy_documents: z.boolean().optional()
+	policy_documents: z.boolean().optional(),
+	security_advisories: z.boolean().optional(),
+	cwes: z.boolean().optional()
 });
 
 export const SSOSettingsSchema = z.object({
@@ -773,7 +786,13 @@ export const EntityAssessmentSchema = z.object({
 	dependency: z.number().optional(),
 	maturity: z.number().optional(),
 	trust: z.number().optional(),
-	observation: z.string().optional().nullable()
+	observation: z.string().optional().nullable(),
+	reference_link: z
+		.string()
+		.refine((val) => val === '' || (val.startsWith('http') && URL.canParse(val)), {
+			message: "Link must be either empty or a valid URL starting with 'http'"
+		})
+		.optional()
 });
 
 export const solutionSchema = z.object({
@@ -796,7 +815,15 @@ export const solutionSchema = z.object({
 	dora_reintegration_possibility: z.string().nullish(),
 	dora_discontinuing_impact: z.string().nullish(),
 	dora_alternative_providers_identified: z.string().nullish(),
-	dora_alternative_providers: z.string().optional()
+	dora_alternative_providers: z.string().optional(),
+	subcontracting_chain: z
+		.array(
+			z.object({
+				subcontractor: z.string().uuid(),
+				recipient: z.string().uuid().nullish()
+			})
+		)
+		.optional()
 });
 
 export const representativeSchema = z.object({
@@ -1229,7 +1256,8 @@ export const SecurityExceptionSchema = z.object({
 	requirement_assessments: z.string().optional().array().optional(),
 	applied_controls: z.string().uuid().optional().array().optional(),
 	assets: z.string().uuid().optional().array().optional(),
-	observation: z.string().optional()
+	observation: z.string().optional().nullable(),
+	link: z.string().url().optional().nullable().or(z.literal(''))
 });
 
 export const FindingSchema = z.object({
@@ -1294,6 +1322,8 @@ export const IncidentSchema = z.object({
 	qualifications: z.string().uuid().optional().array().optional(),
 	filtering_labels: z.string().optional().array().optional(),
 	entities: z.string().uuid().optional().array().optional(),
+	applied_controls: z.string().uuid().optional().array().optional(),
+	task_templates: z.string().uuid().optional().array().optional(),
 	occurred_at: z
 		.string()
 		.datetime({ local: true })
@@ -1396,6 +1426,7 @@ export const TaskTemplateSchema = z.object({
 	risk_assessments: z.string().uuid().optional().array().optional(),
 	findings_assessment: z.string().uuid().optional().array().optional(),
 	objectives: z.string().uuid().optional().array().optional(),
+	incidents: z.string().uuid().optional().array().optional(),
 	observation: z.string().optional(),
 	evidences: z.union([z.string().uuid(), z.string()]).optional().array().optional(), // Allow both UUIDs and strings for evidences created from the form
 	schedule: z

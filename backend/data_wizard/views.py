@@ -100,6 +100,24 @@ import enum
 logger = logging.getLogger(__name__)
 
 
+def resolve_container_name(request, default_prefix: str) -> str:
+    """Return a user-supplied name for an imported container object (assessment,
+    study, etc.) or a timestamped fallback.
+
+    Data Wizard imports that create a single parent object (e.g. compliance /
+    risk / findings assessments, EBIOS RM studies) let the client override the
+    auto-generated name via the ``X-Name`` header. When absent or blank,
+    ``{default_prefix}_{YYYYMMDD_HHMMSS}`` is used.
+    """
+    custom_name = ""
+    if request is not None:
+        custom_name = (request.headers.get("X-Name") or "").strip()
+    if custom_name:
+        return custom_name
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{default_prefix}_{timestamp}"
+
+
 def get_accessible_folders_map(user: User) -> dict[str, UUID]:
     """
     Build a map of folder names to IDs that the provided user can access.
@@ -275,6 +293,28 @@ def _resolve_filtering_labels(value) -> list[UUID]:
                 logging.error(f"Failed to save label: {value}")
         label_ids.append(label.id)
     return label_ids
+
+
+def _resolve_vulnerabilities(value, folder) -> tuple[list[UUID], list[str]]:
+    """
+    Parse pipe- or comma-separated vulnerability names and return a tuple of
+    (list of resolved Vulnerability IDs, list of names that failed to resolve).
+    """
+    if not value or not isinstance(value, str):
+        return [], []
+    vuln_names = [name.strip() for name in re.split(r"[|,]", value) if name.strip()]
+    vuln_ids: list[UUID] = []
+    failed_names: list[str] = []
+    for vuln_name in vuln_names:
+        try:
+            vuln, _created = Vulnerability.objects.get_or_create(
+                name=vuln_name, folder=folder
+            )
+            vuln_ids.append(vuln.id)
+        except Exception:
+            logging.exception(f"Failed to resolve vulnerability {vuln_name}")
+            failed_names.append(vuln_name)
+    return vuln_ids, failed_names
 
 
 class RecordFileType(enum.StrEnum):
@@ -613,6 +653,16 @@ class AssetRecordConsumer(RecordConsumer[list]):
                 asset_type.lower().strip(), asset_type.upper()
             )
 
+        record_is_business_function = record.get("is_business_function", False)
+        is_business_function = False
+        if isinstance(record_is_business_function, str):
+            is_business_function = record_is_business_function.strip().lower() in [
+                "true",
+                "yes",
+            ]
+        elif isinstance(record_is_business_function, bool):
+            is_business_function = record_is_business_function
+
         data = {
             "ref_id": record.get("ref_id", ""),
             "name": name,
@@ -623,6 +673,7 @@ class AssetRecordConsumer(RecordConsumer[list]):
             "reference_link": record.get("reference_link", "")
             or record.get("link", ""),
             "observation": record.get("observation", ""),
+            "is_business_function": is_business_function,
         }
 
         raw_labels = (
@@ -981,6 +1032,57 @@ class UserRecordConsumer(RecordConsumer[None]):
 
 class PerimeterRecordConsumer(RecordConsumer[None]):
     SERIALIZER_CLASS = PerimeterWriteSerializer
+    SOURCE_KEY_MAP: ClassVar[dict[str, tuple[str, ...]]] = {
+        "lc_status": ("lc_status", "status"),
+        "default_assignee": ("default_assignee",),
+    }
+    _LC_STATUS_BY_KEY: ClassVar[dict[str, str]] = {
+        key.lower(): key for key, _ in Perimeter.PRJ_LC_STATUS
+    }
+    _LC_STATUS_BY_LABEL: ClassVar[dict[str, str]] = {
+        str(label).strip().lower(): key for key, label in Perimeter.PRJ_LC_STATUS
+    }
+
+    @classmethod
+    def _normalize_lc_status(cls, value: str) -> Optional[str]:
+        normalized = value.strip().lower()
+        if not normalized:
+            return None
+        return cls._LC_STATUS_BY_KEY.get(normalized) or cls._LC_STATUS_BY_LABEL.get(
+            normalized
+        )
+
+    def _build_update_data(self, record: dict, record_data: dict) -> dict:
+        update_data = super()._build_update_data(record, record_data)
+
+        # Keep parity with AppliedControl.owner behavior: if the column is
+        # present (even empty), propagate it so UPDATE mode can clear stale M2M.
+        if "default_assignee" not in update_data and "default_assignee" in record:
+            update_data["default_assignee"] = record_data.get("default_assignee", [])
+
+        return update_data
+
+    @staticmethod
+    def _resolve_default_assignees(value) -> list[UUID]:
+        if not isinstance(value, str):
+            return []
+
+        entries = [entry.strip() for entry in value.split(";") if entry.strip()]
+        actor_ids = []
+
+        for entry in entries:
+            actor = Actor.objects.filter(user__email__iexact=entry).first()
+            if actor is None:
+                actor = Actor.objects.filter(team__name__iexact=entry).first()
+            if actor is not None:
+                actor_ids.append(actor.id)
+            else:
+                logger.warning(
+                    "Could not resolve perimeter default assignee %r; skipping.",
+                    entry,
+                )
+
+        return actor_ids
 
     def create_context(self):
         return None, None
@@ -997,13 +1099,37 @@ class PerimeterRecordConsumer(RecordConsumer[None]):
         if not name:
             return {}, Error(record=record, error="Name field is mandatory")
 
-        return {
+        raw_lc_status = record.get("lc_status") or record.get("status")
+        lc_status = "in_design"
+        if raw_lc_status not in (None, ""):
+            normalized_status = self._normalize_lc_status(str(raw_lc_status))
+            if normalized_status is None:
+                allowed = ", ".join(k for k, _ in Perimeter.PRJ_LC_STATUS)
+                return {}, Error(
+                    record=record,
+                    error=(
+                        f"Unsupported perimeter status '{raw_lc_status}'. "
+                        f"Allowed values: {allowed}"
+                    ),
+                )
+            lc_status = normalized_status
+
+        default_assignee = self._resolve_default_assignees(
+            record.get("default_assignee")
+        )
+
+        data = {
             "name": name,
             "folder": domain,
             "ref_id": record.get("ref_id", ""),
             "description": record.get("description", ""),
-            "status": record.get("status"),
-        }, None
+            "lc_status": lc_status,
+        }
+
+        if "default_assignee" in record:
+            data["default_assignee"] = default_assignee
+
+        return data, None
 
 
 class ThreatRecordConsumer(RecordConsumer[None]):
@@ -1097,6 +1223,7 @@ class ReferenceControlRecordConsumer(RecordConsumer[None]):
 @dataclass(frozen=True)
 class FindingsAssessmentContext:
     findings_assessment: FindingsAssessment
+    folder: Folder
 
 
 class FindingsAssessmentRecordConsumer(RecordConsumer[FindingsAssessmentContext]):
@@ -1116,8 +1243,7 @@ class FindingsAssessmentRecordConsumer(RecordConsumer[FindingsAssessmentContext]
             perimeter = Perimeter.objects.get(id=perimeter_id)
             folder_id = perimeter.folder.id
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            assessment_name = f"Followup_{timestamp}"
+            assessment_name = resolve_container_name(self.request, "Followup")
             assessment_data = {
                 "name": assessment_name,
                 "perimeter": perimeter_id,
@@ -1136,7 +1262,8 @@ class FindingsAssessmentRecordConsumer(RecordConsumer[FindingsAssessmentContext]
                 )
 
                 return FindingsAssessmentContext(
-                    findings_assessment=findings_assessment
+                    findings_assessment=findings_assessment,
+                    folder=perimeter.folder,
                 ), None
             return None, Error(record=assessment_data, error=str(serializer.errors))
 
@@ -1165,6 +1292,18 @@ class FindingsAssessmentRecordConsumer(RecordConsumer[FindingsAssessmentContext]
             priority = None
 
         filtering_label_ids = _resolve_filtering_labels(record.get("filtering_labels"))
+        vulnerabilities, failed_vulnerabilities = _resolve_vulnerabilities(
+            record.get("vulnerabilities"), context.folder
+        )
+
+        if failed_vulnerabilities:
+            return {}, Error(
+                record=record,
+                error=(
+                    "Failed to create or retrieve thiese vulnerabilities: "
+                    + ", ".join(failed_vulnerabilities)
+                ),
+            )
 
         finding_data = {
             "name": name,
@@ -1177,10 +1316,18 @@ class FindingsAssessmentRecordConsumer(RecordConsumer[FindingsAssessmentContext]
             "eta": _parse_date(record.get("eta")),
             "due_date": _parse_date(record.get("due_date")),
             "observation": record.get("observation", ""),
+            "vulnerabilities": vulnerabilities,
         }
 
         if priority is not None:
             finding_data["priority"] = priority
+
+        if failed_vulnerabilities:
+            return finding_data, Error(
+                record=record,
+                error=f"Could not resolve vulnerabilities: {', '.join(failed_vulnerabilities)}",
+                is_warning=True,
+            )
 
         return finding_data, None
 
@@ -1507,6 +1654,14 @@ class VulnerabilityRecordConsumer(RecordConsumer[None]):
             "assets": assets,
             "security_exceptions": security_exceptions,
         }
+
+        detected_at = _parse_date(record.get("detected_at"))
+        if detected_at:
+            data["detected_at"] = detected_at
+
+        due_date = _parse_date(record.get("due_date"))
+        if due_date:
+            data["due_date"] = due_date
 
         filtering_labels = _resolve_filtering_labels(record.get("filtering_labels"))
         if filtering_labels:
@@ -2580,11 +2735,20 @@ class LoadFileView(APIView):
         results = {"successful": 0, "failed": 0, "errors": []}
         try:
             # Get the perimeter object to extract its folder ID
-            perimeter = Perimeter.objects.get(id=perimeter_id)
-            folder_id = perimeter.folder.id
+            perimeter = None
+            if perimeter_id is not None:
+                perimeter = Perimeter.objects.get(id=perimeter_id)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            assessment_name = f"Assessment_{timestamp}"
+            if perimeter is not None:
+                folder_id = perimeter.folder.id
+            elif folder_id is None:
+                results["failed"] += 1
+                results["errors"].append(
+                    {"error": "A folder must be specified when there's no perimeter!"}
+                )
+                return results
+
+            assessment_name = resolve_container_name(request, "Assessment")
 
             # Prepare data for serializer
             assessment_data = {
@@ -2779,11 +2943,15 @@ class LoadFileView(APIView):
                                     enable_doc_score
                                     and not compliance_assessment.show_documentation_score
                                 ):
+                                    # show_documentation_score is a @property
+                                    # backed by `field_visibility`; the setter
+                                    # mutates that JSON column, so update_fields
+                                    # must point at the actual concrete field.
                                     compliance_assessment.show_documentation_score = (
                                         True
                                     )
                                     compliance_assessment.save(
-                                        update_fields=["show_documentation_score"]
+                                        update_fields=["field_visibility"]
                                     )
                                 results["successful"] += 1
                             else:
@@ -3687,14 +3855,29 @@ class LoadFileView(APIView):
 
         try:
             # Get the perimeter and its domain
-            perimeter = Perimeter.objects.get(id=perimeter_id)
-            domain = perimeter.folder
+            perimeter = None
+            if perimeter_id is not None:
+                perimeter = Perimeter.objects.get(id=perimeter_id)
+
+            if perimeter is not None:
+                domain = perimeter.folder
+            else:
+                if folder_id is None:
+                    results["failed"] += 1
+                    results["errors"].append(
+                        {
+                            "error": "A folder must be specified when there's no perimeter!"
+                        }
+                    )
+                    return results
+                else:
+                    domain = Folder.objects.get(id=folder_id)
 
             # Get the risk matrix
             risk_matrix = RiskMatrix.objects.get(id=matrix_id)
 
+            assessment_name = resolve_container_name(request, "Risk_Assessment")
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            assessment_name = f"Risk_Assessment_{timestamp}"
 
             # Create the risk assessment
             assessment_data = {
@@ -3730,26 +3913,25 @@ class LoadFileView(APIView):
             matrix_mappings = self._build_matrix_mappings(risk_matrix)
 
             # Process controls first - collect all unique control names
+            # Accept both the legacy columns name and the model fields name for the
             all_controls = set()
             for record in records:
-                existing_controls = record.get("existing_applied_controls", "").strip()
-                additional_controls = record.get("additional_controls", "").strip()
+                existing_controls = (
+                    record.get("existing_applied_controls")
+                    or record.get("existing_controls")
+                    or ""
+                ).strip()
+                additional_controls = (
+                    record.get("additional_controls")
+                    or record.get("applied_controls")
+                    or ""
+                ).strip()
 
                 if existing_controls:
-                    all_controls.update(
-                        [
-                            ctrl.strip()
-                            for ctrl in existing_controls.split("\n")
-                            if ctrl.strip()
-                        ]
-                    )
+                    all_controls.update(self._split_multi_separator(existing_controls))
                 if additional_controls:
                     all_controls.update(
-                        [
-                            ctrl.strip()
-                            for ctrl in additional_controls.split("\n")
-                            if ctrl.strip()
-                        ]
+                        self._split_multi_separator(additional_controls)
                     )
 
             # Create or find controls in the domain
@@ -3766,6 +3948,7 @@ class LoadFileView(APIView):
                         matrix_mappings,
                         control_mapping,
                         request,
+                        domain,
                     )
                     if scenario_data:
                         results["successful"] += 1
@@ -3908,7 +4091,13 @@ class LoadFileView(APIView):
         return control_mapping
 
     def _process_risk_scenario_record(
-        self, record, risk_assessment, matrix_mappings, control_mapping, request
+        self,
+        record,
+        risk_assessment,
+        matrix_mappings,
+        control_mapping,
+        request,
+        domain,
     ):
         """Process a single risk scenario record"""
         try:
@@ -3920,26 +4109,35 @@ class LoadFileView(APIView):
             if not name:
                 raise ValueError("Risk scenario name is required")
 
-            # Map risk values using matrix mappings
+            # Map risk values using matrix mappings. Accept both the short form
+            # (`*_proba`, used historically) and the long form (`*_probability`,
+            # used by the CSV/XLSX export) so that exported files round-trip cleanly.
             inherent_impact = self._map_risk_value(
                 record.get("inherent_impact", ""), matrix_mappings["impact"]
             )
             inherent_proba = self._map_risk_value(
-                record.get("inherent_proba", ""), matrix_mappings["probability"]
+                record.get("inherent_proba")
+                or record.get("inherent_probability")
+                or "",
+                matrix_mappings["probability"],
             )
 
             current_impact = self._map_risk_value(
                 record.get("current_impact", ""), matrix_mappings["impact"]
             )
             current_proba = self._map_risk_value(
-                record.get("current_proba", ""), matrix_mappings["probability"]
+                record.get("current_proba") or record.get("current_probability") or "",
+                matrix_mappings["probability"],
             )
 
             residual_impact = self._map_risk_value(
                 record.get("residual_impact", ""), matrix_mappings["impact"]
             )
             residual_proba = self._map_risk_value(
-                record.get("residual_proba", ""), matrix_mappings["probability"]
+                record.get("residual_proba")
+                or record.get("residual_probability")
+                or "",
+                matrix_mappings["probability"],
             )
 
             logger.debug(
@@ -3971,6 +4169,7 @@ class LoadFileView(APIView):
                     ),
                     "open",
                 ),
+                "justification": record.get("justification", "") or "",
             }
 
             # Create the risk scenario
@@ -4005,12 +4204,21 @@ class LoadFileView(APIView):
                 "existing_applied_controls",
             )
 
-            # Link additional controls
+            # Link additional controls. Accept both the legacy column name
+            # (`additional_controls`) and the model field name (`applied_controls`,
+            # used by the CSV/XLSX export) for round-trip compatibility.
             self._link_controls_to_scenario(
                 risk_scenario,
-                record.get("additional_controls", ""),
+                record.get("additional_controls")
+                or record.get("applied_controls")
+                or "",
                 control_mapping,
                 "applied_controls",
+            )
+
+            # Link assets (must already exist in the domain folder)
+            self._link_assets_to_scenario(
+                risk_scenario, record.get("assets", ""), domain
             )
 
             return risk_scenario
@@ -4043,6 +4251,13 @@ class LoadFileView(APIView):
         )
         return -1
 
+    @staticmethod
+    def _split_multi_separator(text: str) -> list[str]:
+        """Split a string on newline, pipe, semicolon or comma and return trimmed, non-empty items."""
+        if not text:
+            return []
+        return [item.strip() for item in re.split(r"[\n|;,]", text) if item.strip()]
+
     def _link_controls_to_scenario(
         self, risk_scenario, controls_text, control_mapping, field_name
     ):
@@ -4050,9 +4265,7 @@ class LoadFileView(APIView):
         if not controls_text:
             return
 
-        control_names = [
-            ctrl.strip() for ctrl in controls_text.split("\n") if ctrl.strip()
-        ]
+        control_names = self._split_multi_separator(controls_text)
         control_ids = []
 
         for control_name in control_names:
@@ -4063,6 +4276,38 @@ class LoadFileView(APIView):
             # Get the field and set the many-to-many relationship
             field = getattr(risk_scenario, field_name)
             field.set(control_ids)
+
+    def _link_assets_to_scenario(self, risk_scenario, assets_text, domain):
+        """Link assets to a risk scenario based on asset names.
+
+        Assets are looked up by name within the domain folder. Missing assets are
+        created with the model's default type (SUPPORT); users can re-classify
+        them afterward from the UI.
+        """
+        if not assets_text:
+            return
+
+        asset_names = self._split_multi_separator(assets_text)
+        asset_ids = []
+
+        for asset_name in asset_names:
+            try:
+                asset, created = Asset.objects.get_or_create(
+                    name=asset_name, folder=domain
+                )
+                if created:
+                    logger.info(
+                        f"Created asset '{asset_name}' in domain '{domain.name}' "
+                        f"with default type '{asset.get_type_display()}'"
+                    )
+                asset_ids.append(asset.id)
+            except Exception:
+                logger.exception(
+                    f"Failed to resolve asset '{asset_name}' in domain '{domain.name}'"
+                )
+
+        if asset_ids:
+            risk_scenario.assets.set(asset_ids)
 
     def _process_ebios_rm_study_arm(
         self,
@@ -4112,8 +4357,7 @@ class LoadFileView(APIView):
             arm_data = process_arm_file(excel_file.read())
 
             # Generate study name
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            study_name = f"EBIOS_RM_Study_{timestamp}"
+            study_name = resolve_container_name(request, "EBIOS_RM_Study")
 
             # Use missions as description
             study_description = arm_data.get("study_description", "")
@@ -5356,9 +5600,11 @@ class LoadFileView(APIView):
             data = process_ebios_rm_excel(excel_file.read())
             study_data = data.get("study", {})
 
-            # Create the study
+            # Create the study. Header override wins over the value parsed
+            # from the Excel file, which in turn wins over the generic fallback.
+            override_name = (request.headers.get("X-Name") or "").strip()
             study_payload = {
-                "name": study_data.get("name") or f"Imported Study",
+                "name": override_name or study_data.get("name") or "Imported Study",
                 "description": study_data.get("description", ""),
                 "ref_id": study_data.get("ref_id", ""),
                 "version": study_data.get("version", ""),

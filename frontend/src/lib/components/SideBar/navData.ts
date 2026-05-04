@@ -48,13 +48,20 @@ export const navData = {
 						'view_assessment',
 						'view_riskassessment',
 						'view_requirementassignment'
-					]
+					],
+					exclude: ['BI-RL-TPR']
 				},
 				{
 					name: 'auditDashboard',
 					fa_icon: 'fa-solid fa-clipboard-check',
 					href: '/auditee-dashboard',
 					permissions: ['view_complianceassessment']
+				},
+				{
+					name: 'presets',
+					fa_icon: 'fa-solid fa-rocket',
+					href: '/presets',
+					permissions: ['add_loadedlibrary', 'view_presetjourney']
 				}
 			]
 		},
@@ -172,7 +179,8 @@ export const navData = {
 					name: 'xRays',
 					fa_icon: 'fa-solid fa-bolt',
 					href: '/x-rays',
-					permissions: ['view_riskassessment', 'view_assessment']
+					permissions: ['view_riskassessment', 'view_assessment'],
+					exclude: ['BI-RL-TPR']
 				},
 				{
 					name: 'incidents',
@@ -183,6 +191,12 @@ export const navData = {
 					name: 'tasks',
 					fa_icon: 'fa-solid fa-note-sticky',
 					href: '/task-templates'
+				},
+				{
+					name: 'tasksReview',
+					fa_icon: 'fa-solid fa-table-columns',
+					href: '/tasks-review',
+					permissions: ['view_appliedcontrol']
 				}
 			]
 		},
@@ -282,7 +296,7 @@ export const navData = {
 					name: 'complianceAssessments',
 					fa_icon: 'fa-solid fa-certificate',
 					href: '/compliance-assessments',
-					exclude: ['BI-RL-ADE']
+					exclude: ['BI-RL-ADE', 'BI-RL-TPR']
 				},
 				{
 					name: 'evidences',

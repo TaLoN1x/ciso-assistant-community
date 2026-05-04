@@ -349,6 +349,7 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'risk_assessment', urlModel: 'risk-assessments' },
 			{ field: 'assets', urlModel: 'assets' },
 			{ field: 'vulnerabilities', urlModel: 'vulnerabilities' },
+			{ field: 'incidents', urlModel: 'incidents' },
 			{ field: 'applied_controls', urlModel: 'applied-controls' },
 			{ field: 'existing_applied_controls', urlModel: 'applied-controls' },
 			{ field: 'perimeter', urlModel: 'perimeters' },
@@ -444,6 +445,12 @@ export const URL_MODEL_MAP: ModelMap = {
 				urlModel: 'assets',
 				disableDelete: true,
 				disableCreate: true
+			},
+			{
+				field: 'applied_controls',
+				urlModel: 'incidents',
+				disableCreate: true,
+				disableDelete: true
 			}
 		],
 		selectFields: [
@@ -1193,6 +1200,34 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'dora_reintegration_possibility' },
 			{ field: 'dora_discontinuing_impact' },
 			{ field: 'dora_alternative_providers_identified' }
+		],
+		detailViewFields: [
+			{ field: 'id' },
+			{ field: 'name' },
+			{ field: 'ref_id' },
+			{ field: 'description' },
+			{ field: 'provider_entity' },
+			{ field: 'recipient_entity' },
+			{ field: 'is_active' },
+			{ field: 'criticality' },
+			{ field: 'owner' },
+			{ field: 'assets' },
+			{ field: 'dora_ict_service_type' },
+			{ field: 'storage_of_data' },
+			{ field: 'data_location_storage' },
+			{ field: 'data_location_processing' },
+			{ field: 'dora_data_sensitiveness' },
+			{ field: 'dora_reliance_level' },
+			{ field: 'dora_substitutability' },
+			{ field: 'dora_non_substitutability_reason' },
+			{ field: 'dora_has_exit_plan' },
+			{ field: 'dora_reintegration_possibility' },
+			{ field: 'dora_discontinuing_impact' },
+			{ field: 'dora_alternative_providers_identified' },
+			{ field: 'dora_alternative_providers' },
+			{ field: 'created_at', type: 'datetime' },
+			{ field: 'updated_at', type: 'datetime' },
+			{ field: 'filtering_labels' }
 		],
 		filters: [{ field: 'owner' }, { field: 'filtering_labels' }]
 	},
@@ -2088,11 +2123,38 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'owners', urlModel: 'actors', urlParams: 'is_third_party=false' },
 			{ field: 'qualifications', urlModel: 'terminologies' },
 			{ field: 'entities', urlModel: 'entities' },
+			{ field: 'applied_controls', urlModel: 'applied-controls' },
+			{ field: 'task_templates', urlModel: 'task-templates' },
 			{ field: 'filtering_labels', urlModel: 'filtering-labels' }
 		],
 		reverseForeignKeyFields: [
 			{ field: 'incident', urlModel: 'timeline-entries' },
-			{ field: 'incident', urlModel: 'dora-incident-reports' }
+			{ field: 'incident', urlModel: 'dora-incident-reports' },
+			{
+				field: 'incidents',
+				urlModel: 'applied-controls',
+				disableCreate: true,
+				disableDelete: true,
+				addExisting: {
+					parentField: 'applied_controls',
+					lazy: true
+				}
+			},
+			{
+				field: 'incidents',
+				urlModel: 'task-templates',
+				disableCreate: true,
+				disableDelete: true,
+				addExisting: {
+					parentField: 'task_templates'
+				}
+			},
+			{
+				field: 'incidents',
+				urlModel: 'risk-scenarios',
+				disableCreate: true,
+				disableDelete: true
+			}
 		],
 		selectFields: [
 			{ field: 'severity', valueType: 'number' },
@@ -2117,6 +2179,9 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'resolved_at' },
 			{ field: 'resolution' },
 			{ field: 'is_bcp_activated' },
+			{ field: 'applied_controls' },
+			{ field: 'task_templates' },
+			{ field: 'risk_scenarios' },
 			{ field: 'created_at' },
 			{ field: 'updated_at' },
 			{ field: 'link' },
@@ -2164,6 +2229,12 @@ export const URL_MODEL_MAP: ModelMap = {
 				defaultFilters: {
 					status: [{ value: 'pending' }, { value: 'in_progress' }]
 				}
+			},
+			{
+				field: 'task_templates',
+				urlModel: 'incidents',
+				disableCreate: true,
+				disableDelete: true
 			}
 		]
 	},
@@ -2744,6 +2815,28 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'time_range', valueType: 'string', detail: false },
 			{ field: 'aggregation', valueType: 'string', detail: false }
 		]
+	},
+	journeys: {
+		name: 'presetjourney',
+		localName: 'journey',
+		localNamePlural: 'journeys',
+		verboseName: 'Journey',
+		verboseNamePlural: 'Journeys',
+		foreignKeyFields: [
+			{ field: 'folder', urlModel: 'folders', urlParams: 'content_type=DO&content_type=GL' },
+			{ field: 'preset', urlModel: 'presets' }
+		],
+		filters: [{ field: 'folder' }, { field: 'preset' }]
+	},
+	presets: {
+		name: 'preset',
+		localName: 'preset',
+		localNamePlural: 'presets',
+		verboseName: 'Preset',
+		verboseNamePlural: 'Presets',
+		foreignKeyFields: [
+			{ field: 'folder', urlModel: 'folders', urlParams: 'content_type=DO&content_type=GL' }
+		]
 	}
 };
 
@@ -2846,7 +2939,8 @@ export const FIELD_COLORED_TAG_MAP: FieldColoredTagMap = {
 					mitigate: { text: 'mitigate', cssClasses: 'badge bg-lime-200' },
 					accept: { text: 'accept', cssClasses: 'badge bg-green-200' },
 					avoid: { text: 'avoid', cssClasses: 'badge bg-red-200' },
-					transfer: { text: 'transfer', cssClasses: 'badge bg-yellow-300' }
+					transfer: { text: 'transfer', cssClasses: 'badge bg-yellow-300' },
+					cancelled: { text: 'cancelled', cssClasses: 'badge bg-gray-300' }
 				}
 			}
 		}

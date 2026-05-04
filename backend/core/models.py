@@ -962,12 +962,12 @@ class LibraryUpdater:
                 order_id = 0
                 all_fields_to_update = set()
 
-                # Check if score boundaries changed
+                # Check if score boundaries changed (triggers warning + strategy prompt)
                 score_boundaries_changed = (
                     prev_min != new_framework.min_score
                     or prev_max != new_framework.max_score
-                    or prev_def != new_framework.scores_definition
                 )
+                scores_definition_changed = prev_def != new_framework.scores_definition
 
                 # If scores changed and no strategy provided, raise exception for frontend to handle
                 if (
@@ -979,11 +979,7 @@ class LibraryUpdater:
                     affected_cas = [
                         ca
                         for ca in compliance_assessments
-                        if (
-                            ca.min_score == prev_min
-                            and ca.max_score == prev_max
-                            and ca.scores_definition == prev_def
-                        )
+                        if (ca.min_score == prev_min and ca.max_score == prev_max)
                     ]
 
                     if affected_cas:
@@ -1004,19 +1000,25 @@ class LibraryUpdater:
 
                 # Update compliance assessments score boundaries
                 compliance_assessments_to_update = []
+                ca_with_scale_change = []
                 ca_bounds = {}
                 for ca in compliance_assessments:
                     # preserve user overrides: update only if CA still equals previous framework defaults
-                    still_on_prev_defaults = (
-                        ca.min_score == prev_min
-                        and ca.max_score == prev_max
-                        and ca.scores_definition == prev_def
+                    scale_on_prev_defaults = (
+                        ca.min_score == prev_min and ca.max_score == prev_max
                     )
+                    definition_on_prev_defaults = ca.scores_definition == prev_def
 
-                    if still_on_prev_defaults and score_boundaries_changed:
+                    needs_update = False
+                    if scale_on_prev_defaults and score_boundaries_changed:
                         ca.min_score = new_framework.min_score
                         ca.max_score = new_framework.max_score
+                        needs_update = True
+                        ca_with_scale_change.append(ca)
+                    if definition_on_prev_defaults and scores_definition_changed:
                         ca.scores_definition = new_framework.scores_definition
+                        needs_update = True
+                    if needs_update:
                         compliance_assessments_to_update.append(ca)
 
                 if compliance_assessments_to_update:
@@ -1046,7 +1048,7 @@ class LibraryUpdater:
                                 )
                             ),
                         )
-                        for ca in compliance_assessments_to_update
+                        for ca in ca_with_scale_change
                     }
 
                 # main loop by requirement_node
@@ -1125,8 +1127,7 @@ class LibraryUpdater:
                         if (
                             ra.is_scored
                             and ra.score is not None
-                            and ra.compliance_assessment
-                            in compliance_assessments_to_update
+                            and ra.compliance_assessment in ca_with_scale_change
                         ):
                             default_min = (
                                 0
@@ -2324,7 +2325,8 @@ class Framework(ReferentialObjectMixin, I18nObjectMixin, EditableMixin):
         blank=True,
         verbose_name=_("Field visibility"),
         help_text=_(
-            "Override visibility per field. Keys: field names. Values: 'everyone', 'auditor', or 'hidden'."
+            "Per-field visibility template seeded into new CAs: "
+            "{field_name: {role: 'edit' | 'read' | 'hidden'}}."
         ),
     )
     urn_namespace = models.CharField(
@@ -2938,6 +2940,7 @@ class SecurityException(NameDescriptionMixin, FolderMixin, PublishInRootFolderMi
     )
     is_published = models.BooleanField(_("published"), default=True)
     observation = models.TextField(null=True, blank=True, verbose_name=_("Observation"))
+    link = models.URLField(null=True, blank=True, verbose_name=_("Link"))
 
     fields_to_check = ["name"]
 
@@ -2946,10 +2949,6 @@ class SecurityException(NameDescriptionMixin, FolderMixin, PublishInRootFolderMi
 
     def clean(self):
         super().clean()
-        if self.expiration_date and self.expiration_date < now().date():
-            raise ValidationError(
-                {"expiration_date": "Expiration date must be in the future"}
-            )
 
 
 class AssetCapability(ReferentialObjectMixin, I18nObjectMixin):
@@ -3406,37 +3405,39 @@ class Asset(
 
     @classmethod
     def _aggregate_security_capabilities(
-        cls, supporting_descendants: set, parent_asset=None
+        cls, supporting_descendants: set, parent_asset=None, parent_to_children=None
     ) -> dict:
         """
         Aggregates security capabilities from supporting descendants (lowest value wins - worst case).
         Supporting assets can override capabilities - when overridden, the overriding asset's value is used directly,
         and its descendants are excluded for that capability only (not globally).
+
+        If `parent_to_children` is provided, it is reused instead of re-running
+        `_prefetch_graph_data` — this avoids an extra full-graph prefetch per invocation
+        when the caller already built the graph for a batch of assets.
         """
         # Build descendant map with constant DB queries using prefetched graph data
         descendants_map = {}
-        if parent_asset is not None:
-            graph = cls._prefetch_graph_data([parent_asset])
-            parent_to_children = graph["parent_to_children"]
+        if parent_to_children is None and parent_asset is not None:
+            parent_to_children = cls._prefetch_graph_data([parent_asset])[
+                "parent_to_children"
+            ]
+        if parent_to_children is not None:
             for asset in supporting_descendants:
                 descendants_map[asset.id] = cls._get_all_descendants(
                     asset, parent_to_children
                 )
         else:
-            # Fallback for when parent_asset is not provided
+            # Fallback for when neither parent_asset nor parent_to_children is provided
             for asset in supporting_descendants:
                 descendants_map[asset.id] = asset.get_descendants()
 
-        # Track which capabilities are overridden by which assets
+        # Track which capabilities are overridden by which assets.
+        # Uses `.all()` (not `.values_list`) so the prefetch cache is honored.
         overrides = {}  # {cap_name: [list of assets that override it]}
         for asset in supporting_descendants:
-            overridden = asset.overridden_children_capabilities.values_list(
-                "name", flat=True
-            )
-            for cap_name in overridden:
-                if cap_name not in overrides:
-                    overrides[cap_name] = []
-                overrides[cap_name].append(asset)
+            for cap in asset.overridden_children_capabilities.all():
+                overrides.setdefault(cap.name, []).append(asset)
 
         agg_cap = {}
         for asset in supporting_descendants:
@@ -3472,37 +3473,38 @@ class Asset(
 
     @classmethod
     def _aggregate_recovery_capabilities(
-        cls, supporting_descendants: set, parent_asset=None
+        cls, supporting_descendants: set, parent_asset=None, parent_to_children=None
     ) -> dict:
         """
         Aggregates recovery capabilities from supporting descendants (highest value wins - worst case).
         Supporting assets can override capabilities - when overridden, the overriding asset's value is used directly,
         and its descendants are excluded for that capability only (not globally).
+
+        If `parent_to_children` is provided, it is reused instead of re-running
+        `_prefetch_graph_data`.
         """
         # Build descendant map with constant DB queries using prefetched graph data
         descendants_map = {}
-        if parent_asset is not None:
-            graph = cls._prefetch_graph_data([parent_asset])
-            parent_to_children = graph["parent_to_children"]
+        if parent_to_children is None and parent_asset is not None:
+            parent_to_children = cls._prefetch_graph_data([parent_asset])[
+                "parent_to_children"
+            ]
+        if parent_to_children is not None:
             for asset in supporting_descendants:
                 descendants_map[asset.id] = cls._get_all_descendants(
                     asset, parent_to_children
                 )
         else:
-            # Fallback for when parent_asset is not provided
+            # Fallback for when neither parent_asset nor parent_to_children is provided
             for asset in supporting_descendants:
                 descendants_map[asset.id] = asset.get_descendants()
 
-        # Track which capabilities are overridden by which assets
+        # Track which capabilities are overridden by which assets.
+        # Uses `.all()` (not `.values_list`) so the prefetch cache is honored.
         overrides = {}  # {cap_name: [list of assets that override it]}
         for asset in supporting_descendants:
-            overridden = asset.overridden_children_capabilities.values_list(
-                "name", flat=True
-            )
-            for cap_name in overridden:
-                if cap_name not in overrides:
-                    overrides[cap_name] = []
-                overrides[cap_name].append(asset)
+            for cap in asset.overridden_children_capabilities.all():
+                overrides.setdefault(cap.name, []).append(asset)
 
         agg_cap = {}
         for asset in supporting_descendants:
@@ -4619,6 +4621,18 @@ class Incident(NameDescriptionMixin, FolderMixin, FilteringLabelMixin):
     is_bcp_activated = models.BooleanField(
         null=True, blank=True, verbose_name=_("BCP activated")
     )
+    applied_controls = models.ManyToManyField(
+        "core.AppliedControl",
+        blank=True,
+        verbose_name=_("Applied controls"),
+        related_name="incidents",
+    )
+    task_templates = models.ManyToManyField(
+        "core.TaskTemplate",
+        blank=True,
+        verbose_name=_("Task templates"),
+        related_name="incidents",
+    )
 
     fields_to_check = ["name", "ref_id"]
 
@@ -5514,7 +5528,10 @@ class Vulnerability(
             self.detected_at = date.today()
             if update_fields is not None:
                 update_fields.add("detected_at")
-        if is_new or severity_changed:
+        # Auto-apply SLA only when due_date is empty. Explicit user values
+        # (from the wizard or manual input) are preserved; the bulk
+        # refresh-due-dates action is the sole path that overrides them.
+        if (is_new or severity_changed) and not self.due_date:
             self._apply_sla_policy()
             if update_fields is not None:
                 update_fields.add("due_date")
@@ -6113,6 +6130,7 @@ class RiskScenario(NameDescriptionMixin, FilteringLabelMixin, FolderMixin):
         ("accept", _("Accept")),
         ("avoid", _("Avoid")),
         ("transfer", _("Transfer")),
+        ("cancelled", _("Cancelled")),
     ]
 
     DEFAULT_SOK_OPTIONS = {
@@ -6172,6 +6190,13 @@ class RiskScenario(NameDescriptionMixin, FilteringLabelMixin, FolderMixin):
         verbose_name=_("Vulnerabilities"),
         blank=True,
         help_text=_("Vulnerabities exploited by the risk scenario"),
+        related_name="risk_scenarios",
+    )
+    incidents = models.ManyToManyField(
+        Incident,
+        verbose_name=_("Incidents"),
+        blank=True,
+        help_text=_("Incidents that materialized this risk scenario"),
         related_name="risk_scenarios",
     )
     applied_controls = models.ManyToManyField(
@@ -6589,9 +6614,6 @@ class ComplianceAssessment(Assessment):
     scores_definition = models.JSONField(
         blank=True, null=True, verbose_name=_("Score definition")
     )
-    scoring_enabled = models.BooleanField(default=False)
-    show_documentation_score = models.BooleanField(default=False)
-
     computed_outcome = models.JSONField(null=True, blank=True)
 
     assets = models.ManyToManyField(
@@ -6618,15 +6640,17 @@ class ComplianceAssessment(Assessment):
         related_name="compliance_assessments",
     )
 
-    extended_result_enabled = models.BooleanField(default=False)
-    progress_status_enabled = models.BooleanField(default=True)
-
     field_visibility = models.JSONField(
         default=dict,
         blank=True,
         verbose_name=_("Field visibility"),
         help_text=_(
-            "Override visibility per field for this assessment. Overrides framework defaults."
+            "Per-field visibility map: "
+            "{field_name: {role: 'edit' | 'read' | 'hidden'}}. "
+            "Missing keys cascade through core.utils.DEFAULT_VISIBILITY "
+            "(e.g. score/documentation_score default to hidden, "
+            "status/extended_result to auditor-only) and finally to 'edit' "
+            "for every role for unknown fields."
         ),
     )
 
@@ -6635,6 +6659,15 @@ class ComplianceAssessment(Assessment):
         choices=CalculationMethod.choices,
         default=CalculationMethod.AVG,
         verbose_name=_("Score Calculation Method"),
+    )
+    target_score = models.FloatField(
+        null=True,
+        blank=True,
+        verbose_name=_("Target score"),
+    )
+    anchor_na_to_target = models.BooleanField(
+        default=False,
+        verbose_name=_("Anchor N/A to target score"),
     )
     auto_sync = models.BooleanField(
         default=False,
@@ -6646,6 +6679,63 @@ class ComplianceAssessment(Assessment):
     class Meta:
         verbose_name = _("Compliance assessment")
         verbose_name_plural = _("Compliance assessments")
+
+    # --- Visibility-derived booleans ---
+    # These mirror legacy boolean fields. Storage is `field_visibility` keyed by
+    # per-role pairs ({role: 'edit'|'read'|'hidden'}); the legacy booleans read
+    # the auditor axis (the field exists at all if auditor isn't 'hidden').
+
+    def _auditor_visible(self, field):
+        from core.utils import resolve_field_visibility
+
+        pair = resolve_field_visibility(self, field)
+        return pair.get("auditor", "edit") != "hidden"
+
+    def _set_field_hidden(self, field, hidden):
+        # When un-hiding via the legacy boolean setters (scoring_enabled,
+        # show_documentation_score, extended_result_enabled, progress_status_enabled),
+        # restore AUDITOR_ONLY rather than EVERYONE_EDIT — the historical "True"
+        # value of those booleans only meant "auditor sees it", and the migration
+        # backfills existing CAs to AUDITOR_ONLY for the same reason. Writing
+        # EVERYONE_EDIT here would silently widen access to respondents.
+        from core.utils import AUDITOR_ONLY, HIDDEN
+
+        fv = dict(self.field_visibility or {})
+        fv[field] = dict(HIDDEN) if hidden else dict(AUDITOR_ONLY)
+        self.field_visibility = fv
+
+    @property
+    def scoring_enabled(self):
+        return self._auditor_visible("score")
+
+    @scoring_enabled.setter
+    def scoring_enabled(self, value):
+        self._set_field_hidden("score", not value)
+        self._set_field_hidden("is_scored", not value)
+
+    @property
+    def show_documentation_score(self):
+        return self._auditor_visible("documentation_score")
+
+    @show_documentation_score.setter
+    def show_documentation_score(self, value):
+        self._set_field_hidden("documentation_score", not value)
+
+    @property
+    def extended_result_enabled(self):
+        return self._auditor_visible("extended_result")
+
+    @extended_result_enabled.setter
+    def extended_result_enabled(self, value):
+        self._set_field_hidden("extended_result", not value)
+
+    @property
+    def progress_status_enabled(self):
+        return self._auditor_visible("status")
+
+    @progress_status_enabled.setter
+    def progress_status_enabled(self, value):
+        self._set_field_hidden("status", not value)
 
     def upsert_daily_metrics(self):
         per_status = {item[1]: item[0] for item in self.get_requirements_status_count()}
@@ -6918,39 +7008,132 @@ class ComplianceAssessment(Assessment):
 
         return changes
 
-    def _compute_score_for_field(self, requirement_assessments, ig, score_field):
+    def _compute_score_for_field(
+        self, requirement_assessments, ig, score_field, na_target=None
+    ):
         """
         Compute a single score value from the given field using the current
         score_calculation_method (AVG, SUM, or AVG_OF_AVG).
 
+        When na_target is set, N/A requirement assessments use that value
+        instead of their actual score.
+
         Returns the computed score, or -1 if no scored requirements exist.
         """
         if self.score_calculation_method == self.CalculationMethod.AVG_OF_AVG:
-            groups = defaultdict(lambda: {"weighted_score": 0, "total_weight": 0})
+            # Build leaf scores from requirement assessments
+            leaf_scores = {}
             for ras in requirement_assessments:
                 if not ig or (ig & set(ras.requirement.implementation_groups or [])):
-                    parent_key = ras.requirement.parent_urn or ras.requirement.urn
-                    weight = ras.requirement.weight if ras.requirement.weight else 1
-                    groups[parent_key]["weighted_score"] += (
-                        getattr(ras, score_field) or 0
-                    ) * weight
-                    groups[parent_key]["total_weight"] += weight
+                    is_na = ras.result == RequirementAssessment.Result.NOT_APPLICABLE
+                    score = (
+                        na_target
+                        if is_na and na_target is not None
+                        else (getattr(ras, score_field) or 0)
+                    )
+                    leaf_scores[ras.requirement.urn] = {
+                        "score": score,
+                        "weight": ras.requirement.weight or 1,
+                    }
 
-            group_averages = [
-                g["weighted_score"] / g["total_weight"]
-                for g in groups.values()
-                if g["total_weight"] > 0
-            ]
-            if not group_averages:
+            if not leaf_scores:
                 return -1
-            return int(sum(group_averages) / len(group_averages) * 10) / 10
+
+            # Fetch the framework tree structure
+            all_nodes = RequirementNode.objects.filter(
+                framework=self.framework
+            ).values_list("urn", "parent_urn", "weight")
+
+            children_map = defaultdict(list)
+            node_weights = {}
+            roots = []
+            all_urns = set()
+            parent_links = {}  # urn -> parent_urn
+            for urn, parent_urn, weight in all_nodes:
+                node_weights[urn] = weight or 1
+                all_urns.add(urn)
+                parent_links[urn] = parent_urn
+            for urn, parent_urn in parent_links.items():
+                if parent_urn and parent_urn in all_urns:
+                    children_map[parent_urn].append(urn)
+                else:
+                    # No parent, or parent_urn references a missing node —
+                    # treat as a root so the subtree is still reachable.
+                    roots.append(urn)
+
+            # Recursively compute weighted averages bottom-up
+            computed = {}
+            visiting = set()
+
+            def compute(urn):
+                if urn in computed:
+                    return computed[urn]
+                if urn in visiting:
+                    # Cycle in the requirement tree — skip to avoid infinite recursion
+                    return None
+                visiting.add(urn)
+
+                if urn in leaf_scores:
+                    computed[urn] = leaf_scores[urn]["score"]
+                    return computed[urn]
+
+                children = children_map.get(urn, [])
+                if not children:
+                    return None
+
+                child_results = []
+                for child_urn in children:
+                    child_score = compute(child_urn)
+                    if child_score is not None:
+                        child_results.append(
+                            (child_score, node_weights.get(child_urn, 1))
+                        )
+
+                if not child_results:
+                    return None
+
+                total_weighted = sum(s * w for s, w in child_results)
+                total_weight = sum(w for _, w in child_results)
+                computed[urn] = total_weighted / total_weight
+                return computed[urn]
+
+            # Compute all nodes bottom-up
+            for root in roots:
+                compute(root)
+
+            # Collect scores for the global average.
+            # If a root is structural (no scored leaves as direct children),
+            # descend one level and flat-average its children (categories).
+            # Otherwise the root itself is the grouping level.
+            category_scores = []
+            for root in roots:
+                children = children_map.get(root, [])
+                has_leaf_children = any(c in leaf_scores for c in children)
+                if has_leaf_children or not children:
+                    if root in computed:
+                        category_scores.append(computed[root])
+                else:
+                    for child_urn in children:
+                        if child_urn in computed:
+                            category_scores.append(computed[child_urn])
+
+            if not category_scores:
+                return -1
+
+            return int(sum(category_scores) / len(category_scores) * 10) / 10
 
         weighted_score = 0
         total_weight = 0
         for ras in requirement_assessments:
             if not ig or (ig & set(ras.requirement.implementation_groups or [])):
                 weight = ras.requirement.weight if ras.requirement.weight else 1
-                weighted_score += (getattr(ras, score_field) or 0) * weight
+                is_na = ras.result == RequirementAssessment.Result.NOT_APPLICABLE
+                score = (
+                    na_target
+                    if is_na and na_target is not None
+                    else (getattr(ras, score_field) or 0)
+                )
+                weighted_score += score * weight
                 total_weight += weight
 
         if total_weight == 0:
@@ -6971,29 +7154,50 @@ class ComplianceAssessment(Assessment):
         - maturity_score: average of the enabled layers
 
         Each layer uses the same score_calculation_method (AVG, SUM, AVG_OF_AVG).
+
+        When anchor_na_to_target is True, N/A requirements are included with
+        their scores replaced by the effective target (target_score or max_score).
         Returns a dict with all three values.
         """
-        requirement_assessments_scored = list(
+        qs = (
             RequirementAssessment.objects.filter(compliance_assessment=self)
             .select_related("requirement")
-            .exclude(result=RequirementAssessment.Result.NOT_APPLICABLE)
-            .exclude(is_scored=False)
             .exclude(requirement__assessable=False)
         )
+        if self.anchor_na_to_target:
+            # Keep N/A items (they'll be anchored to target), but still
+            # exclude non-N/A items that have is_scored=False.
+            qs = qs.exclude(
+                ~Q(result=RequirementAssessment.Result.NOT_APPLICABLE),
+                is_scored=False,
+            )
+        else:
+            qs = qs.exclude(is_scored=False).exclude(
+                result=RequirementAssessment.Result.NOT_APPLICABLE
+            )
+
+        requirement_assessments_scored = list(qs)
+
         ig = (
             set(self.selected_implementation_groups)
             if self.selected_implementation_groups
             else None
         )
 
+        na_target = None
+        if self.anchor_na_to_target:
+            na_target = (
+                self.target_score if self.target_score is not None else self.max_score
+            )
+
         impl_score = self._compute_score_for_field(
-            requirement_assessments_scored, ig, "score"
+            requirement_assessments_scored, ig, "score", na_target
         )
 
         doc_score = None
         if self.show_documentation_score:
             doc_score = self._compute_score_for_field(
-                requirement_assessments_scored, ig, "documentation_score"
+                requirement_assessments_scored, ig, "documentation_score", na_target
             )
 
         # Maturity is the average of the enabled layers (ignore -1 / None)
@@ -7756,6 +7960,12 @@ class RequirementAssessment(AbstractBaseModel, FolderMixin, ETADueDateMixin):
         )
         GOOD_PRACTICE = "good_practice", "Good practice"
 
+    class RespondentAlignment(models.TextChoices):
+        YES = "yes", _("Yes")
+        NO = "no", _("No")
+        IN_PROGRESS = "in_progress", _("In progress")
+        NOT_APPLICABLE = "not_applicable", _("Not applicable")
+
     status = models.CharField(
         max_length=100,
         choices=Status.choices,
@@ -7794,6 +8004,13 @@ class RequirementAssessment(AbstractBaseModel, FolderMixin, ETADueDateMixin):
         related_name="requirement_assessments",
     )
     observation = models.TextField(null=True, blank=True, verbose_name=_("Observation"))
+    respondent_alignment = models.CharField(
+        max_length=32,
+        choices=RespondentAlignment.choices,
+        blank=True,
+        null=True,
+        verbose_name=_("Respondent alignment"),
+    )
     compliance_assessment = models.ForeignKey(
         ComplianceAssessment,
         on_delete=models.CASCADE,
@@ -9209,11 +9426,38 @@ class Actor(AbstractBaseModel):
         return str(self.specific)
 
 
+class Preset(NameDescriptionMixin, FolderMixin, EditableMixin):
+    """Template definition. Library-backed (urn set) or user-authored (urn null)."""
+
+    urn = models.CharField(max_length=255, null=True, blank=True, unique=True)
+    ref_id = models.CharField(max_length=255, null=True, blank=True)
+    version = models.IntegerField(default=1)
+    provider = models.CharField(max_length=255, null=True, blank=True)
+    translations = models.JSONField(default=dict, blank=True)
+    profile = models.JSONField(default=dict, blank=True)
+    feature_flags = models.JSONField(default=dict, blank=True)
+    scaffolded_objects = models.JSONField(default=list, blank=True)
+    steps = models.JSONField(default=list, blank=True)
+    dependencies = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class PresetJourney(NameDescriptionMixin, FolderMixin):
     """Instance created when a user applies a preset definition."""
 
-    urn = models.CharField(max_length=255)
-    version = models.IntegerField(default=1)
+    preset = models.ForeignKey(
+        Preset,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="journeys",
+    )
+    applied_version = models.IntegerField(default=1)
     object_refs = models.JSONField(default=dict)
     applied_at = models.DateTimeField(auto_now_add=True)
     applied_by = models.ForeignKey(
@@ -9246,6 +9490,8 @@ class PresetJourneyStep(AbstractBaseModel):
     translations = models.JSONField(null=True, blank=True)
     target_model = models.CharField(max_length=100, blank=True, null=True)
     target_ref = models.CharField(max_length=100, blank=True, null=True)
+    target_url = models.CharField(max_length=255, blank=True, null=True)
+    target_params = models.JSONField(null=True, blank=True)
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.NOT_STARTED
     )
@@ -9311,7 +9557,7 @@ auditlog.register(
 )
 auditlog.register(
     RiskScenario,
-    m2m_fields={"owner", "applied_controls", "existing_applied_controls"},
+    m2m_fields={"owner", "applied_controls", "existing_applied_controls", "incidents"},
     exclude_fields=common_exclude,
 )
 auditlog.register(
@@ -9356,6 +9602,7 @@ auditlog.register(
 )
 auditlog.register(
     Incident,
+    m2m_fields={"applied_controls", "task_templates"},
     exclude_fields=common_exclude,
 )
 auditlog.register(
@@ -9398,6 +9645,10 @@ auditlog.register(
     RequirementAssignment,
     exclude_fields=common_exclude,
     m2m_fields={"actor", "requirement_assessments"},
+)
+auditlog.register(
+    Preset,
+    exclude_fields=common_exclude,
 )
 auditlog.register(
     PresetJourney,
