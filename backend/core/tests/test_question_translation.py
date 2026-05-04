@@ -258,3 +258,28 @@ class TestQuestionsTranslatedPrefetchCache:
                 _ = rn.get_questions_translated
         # Non-zero — proves we're not relying on a stale cache.
         assert len(ctx.captured_queries) > 0
+
+    def test_falls_back_when_questions_prefetched_without_choices(
+        self, translated_node
+    ):
+        """If the caller prefetches `questions` but NOT
+        `questions__choices`, using the cached questions and then
+        accessing `question.choices.all()` per row would N+1. The guard
+        must detect the missing `choices` cache and fall back to the
+        in-property `prefetch_related("choices")` so the work stays
+        bounded."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        rn_partial = RequirementNode.objects.prefetch_related("questions").get(
+            pk=translated_node["rn"].pk
+        )
+        with CaptureQueriesContext(connection) as ctx:
+            with translation_override("en"):
+                result = rn_partial.get_questions_translated
+        assert result is not None
+        # Fallback path runs `self.questions.prefetch_related("choices").all()` —
+        # 2 queries (questions + choices via IN), not 1 + N.
+        assert len(ctx.captured_queries) <= 2, [
+            q["sql"][:120] for q in ctx.captured_queries
+        ]
