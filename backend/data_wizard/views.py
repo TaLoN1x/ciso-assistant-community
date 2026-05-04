@@ -290,10 +290,15 @@ def _resolve_filtering_labels(value, ctx: BaseContext) -> list[UUID]:
 
     viewable_name_to_ids = ctx.get_viewable_object_ids(FilteringLabel, ["label"])
     viewable_ids = list(viewable_name_to_ids.values())
+
+    newly_created_label_name_map: dict[str, FilteringLabel] = {}
     base_query = FilteringLabel.objects.filter(id__in=viewable_ids)
 
     for label_name in label_names:
         label = base_query.filter(label=label_name).first()
+        if label is None:
+            label = newly_created_label_name_map.get(label_name)
+
         if label is not None:
             label_ids.add(label.id)
         else:
@@ -302,6 +307,7 @@ def _resolve_filtering_labels(value, ctx: BaseContext) -> list[UUID]:
                 label.full_clean()
                 label.save()
                 label_ids.add(label.id)
+                newly_created_label_name_map[label_name] = label
             except Exception:
                 logging.error(f"Failed to save label: {value}")
 
