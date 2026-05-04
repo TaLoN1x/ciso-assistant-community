@@ -327,7 +327,7 @@ def _resolve_owners(record_value: Any, ctx: BaseContext) -> list[UUID]:
 
     viewable_name_to_ids = ctx.get_viewable_object_ids(Actor, ["user"])
     viewable_ids = list(viewable_name_to_ids.values())
-    base_query = Actor.objects.filter(id__in=viewable_ids)
+    base_query = Actor.objects.filter(id__in=viewable_ids).select_related("user")
 
     for entry in actor_entries:
         # Try matching as user email first
