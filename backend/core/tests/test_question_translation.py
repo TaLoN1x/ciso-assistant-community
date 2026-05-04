@@ -224,9 +224,9 @@ class TestQuestionsTranslatedPrefetchCache:
 
         # Cached path: re-fetch via a queryset that prefetches
         # questions__choices, then read the property.
-        rn_cached = RequirementNode.objects.prefetch_related(
-            "questions__choices"
-        ).get(pk=rn.pk)
+        rn_cached = RequirementNode.objects.prefetch_related("questions__choices").get(
+            pk=rn.pk
+        )
         with translation_override("en"):
             cached = rn_cached.get_questions_translated
 
@@ -237,17 +237,15 @@ class TestQuestionsTranslatedPrefetchCache:
         from django.db import connection
         from django.test.utils import CaptureQueriesContext
 
-        rn_cached = RequirementNode.objects.prefetch_related(
-            "questions__choices"
-        ).get(pk=translated_node["rn"].pk)
+        rn_cached = RequirementNode.objects.prefetch_related("questions__choices").get(
+            pk=translated_node["rn"].pk
+        )
         with CaptureQueriesContext(connection) as ctx:
             with translation_override("en"):
                 _ = rn_cached.get_questions_translated
         # Zero DB hits — the prefetch cache supplies both questions and
         # their choices.
-        assert len(ctx.captured_queries) == 0, [
-            q["sql"] for q in ctx.captured_queries
-        ]
+        assert len(ctx.captured_queries) == 0, [q["sql"] for q in ctx.captured_queries]
 
     def test_queries_when_not_prefetched(self, translated_node):
         """Without prefetch, the property still works (fallback path)."""

@@ -11211,9 +11211,7 @@ class ComplianceAssessmentViewSet(BaseModelViewSet):
 
         not_assessed = RequirementAssessment.Result.NOT_ASSESSED
         ig_audits = [a for a in audits if a.selected_implementation_groups]
-        plain_ids = [
-            a.id for a in audits if not a.selected_implementation_groups
-        ]
+        plain_ids = [a.id for a in audits if not a.selected_implementation_groups]
 
         total_map: dict = {}
         assessed_map: dict = {}
@@ -11251,8 +11249,7 @@ class ComplianceAssessmentViewSet(BaseModelViewSet):
             for ra in ras:
                 req_groups = ra.requirement.implementation_groups or []
                 if not (
-                    ig_groups_by_audit[ra.compliance_assessment_id]
-                    & set(req_groups)
+                    ig_groups_by_audit[ra.compliance_assessment_id] & set(req_groups)
                 ):
                     continue
                 total_map[ra.compliance_assessment_id] += 1
@@ -14008,8 +14005,7 @@ class RequirementAssessmentViewSet(BaseModelViewSet):
         if not parent_urns:
             return optimized_data
         parents_by_urn = {
-            p.urn: p
-            for p in RequirementNode.objects.filter(urn__in=parent_urns)
+            p.urn: p for p in RequirementNode.objects.filter(urn__in=parent_urns)
         }
         for ra in page:
             req = getattr(ra, "requirement", None)
@@ -14019,6 +14015,7 @@ class RequirementAssessmentViewSet(BaseModelViewSet):
             if parent is not None:
                 req._parent_requirement_obj = parent
         return optimized_data
+
     filterset_fields = [
         "folder",
         "folder__name",

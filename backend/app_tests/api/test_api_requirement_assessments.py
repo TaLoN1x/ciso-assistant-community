@@ -460,9 +460,7 @@ class TestRequirementAssessmentListParentBulkLoad:
                 f"wrong parent for child {req['ref_id']!r}: {parent}"
             )
 
-    def test_query_count_is_bounded_by_page_not_by_rows(
-        self, authenticated_client
-    ):
+    def test_query_count_is_bounded_by_page_not_by_rows(self, authenticated_client):
         """For N RAs whose requirements all have parent_urn, the bulk
         loader should issue ONE query for parents (not N)."""
         from django.db import connection
