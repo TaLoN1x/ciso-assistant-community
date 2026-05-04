@@ -501,9 +501,10 @@ export AUTH_TOKEN_AUTO_REFRESH_TTL=36000 # optional, default value is 36000 seco
 
 Visit the uv website for instructions: <https://docs.astral.sh/uv/getting-started/installation/>
 
-4. Install required dependencies.
+4. Move to backend and install required dependencies.
 
 ```sh
+cd backend
 uv sync
 ```
 
