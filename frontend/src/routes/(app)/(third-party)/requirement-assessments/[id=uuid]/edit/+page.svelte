@@ -12,7 +12,7 @@
 	import MarkdownField from '$lib/components/Forms/MarkdownField.svelte';
 	import CreateModal from '$lib/components/Modals/CreateModal.svelte';
 	import ModelTable from '$lib/components/ModelTable/ModelTable.svelte';
-	import { getSecureRedirect, getFieldVisibility } from '$lib/utils/helpers';
+	import { getSecureRedirect, getFieldVisibility, alignmentColorMap } from '$lib/utils/helpers';
 	import { Progress, Tabs } from '@skeletonlabs/skeleton-svelte';
 
 	import { complianceResultColorMap } from '$lib/utils/constants';
@@ -256,19 +256,29 @@
 	// Field visibility
 	const fw = data.requirementAssessment.compliance_assessment.framework;
 	const complianceAssessment = data.requirementAssessment.compliance_assessment;
-	const viewerRole: 'respondent' | 'auditor' = (data.viewerRole ?? 'auditor') as
-		| 'respondent'
-		| 'auditor';
+	const viewerRole: 'respondent' | 'auditor' =
+		data.viewerRole === 'auditor' ? 'auditor' : 'respondent';
 	const {
 		showResult,
+		showStatus,
 		showScore,
+		showDocumentationScore,
 		showObservation,
 		showAppliedControls,
 		showEvidences,
-		showSecurityExceptions
+		showSecurityExceptions,
+		showRespondentAlignment
 	} = getFieldVisibility(fw, complianceAssessment, viewerRole);
 
-	let group = $state(page.data.user.is_third_party ? 'evidences' : 'applied_controls');
+	const canShowAppliedControls = showAppliedControls && !page.data.user.is_third_party;
+
+	function pickDefaultTab(): string {
+		if (canShowAppliedControls) return 'applied_controls';
+		if (showEvidences) return 'evidences';
+		if (showSecurityExceptions) return 'security_exceptions';
+		return 'applied_controls';
+	}
+	let group = $state(pickDefaultTab());
 
 	// Refresh AutompleteSelect to assign created applied control/evidence
 	let refreshKey = $state(false);
@@ -562,7 +572,7 @@
 			{...rest}
 		>
 			{#snippet children({ form, data })}
-				{#if showAppliedControls || showEvidences || showSecurityExceptions}
+				{#if canShowAppliedControls || showEvidences || showSecurityExceptions}
 					<div class="card shadow-lg bg-white">
 						<Tabs
 							value={group}
@@ -571,7 +581,7 @@
 							}}
 						>
 							<Tabs.List>
-								{#if showAppliedControls && !page.data.user.is_third_party}
+								{#if canShowAppliedControls}
 									<Tabs.Trigger value="applied_controls">{m.appliedControls()}</Tabs.Trigger>
 								{/if}
 								{#if showEvidences}
@@ -582,7 +592,7 @@
 								{/if}
 								<Tabs.Indicator />
 							</Tabs.List>
-							{#if showAppliedControls}
+							{#if canShowAppliedControls}
 								<Tabs.Content value="applied_controls">
 									<div class="flex items-center mb-2 px-2 text-xs space-x-2">
 										<i class="fa-solid fa-info-circle"></i>
@@ -734,7 +744,7 @@
 							label={m.questionSingular()}
 						/>
 					{/if}
-					{#if page.data.requirementAssessment.compliance_assessment.progress_status_enabled}
+					{#if showStatus && page.data.requirementAssessment.compliance_assessment.progress_status_enabled}
 						<Select
 							{form}
 							options={page.data.model.selectOptions['status']}
@@ -742,6 +752,19 @@
 							label={m.status()}
 							helpText={m.requirementAssessmentStatusHelpText()}
 						/>
+					{/if}
+					{#if showRespondentAlignment && page.data.requirementAssessment.respondent_alignment}
+						<p class="flex flex-row items-center space-x-4">
+							<span class="text-sm italic text-surface-600">{m.respondentAnswered()}:</span>
+							<span
+								class="badge text-sm font-semibold text-white"
+								style="background-color: {alignmentColorMap[
+									page.data.requirementAssessment.respondent_alignment
+								]}"
+							>
+								{safeTranslate(page.data.requirementAssessment.respondent_alignment)}
+							</span>
+						</p>
 					{/if}
 					{#if showResult}
 						{#if computedResult}
@@ -766,7 +789,7 @@
 							/>
 						{/if}
 					{/if}
-					{#if page.data.requirementAssessment.compliance_assessment.extended_result_enabled}
+					{#if showResult && page.data.requirementAssessment.compliance_assessment.extended_result_enabled}
 						<Select
 							{form}
 							options={page.data.model.selectOptions['extended_result']}
@@ -775,63 +798,67 @@
 							helpText={m.extendedResultHelpText()}
 						/>
 					{/if}
-					{#if showScore}
-						{#if page.data.compliance_assessment_score.scoring_enabled && computedScore !== null}
-							<div class="flex flex-row items-center space-x-4">
-								<span class="font-medium">{m.score()}</span>
-								<div class="shrink-0 relative">
-									<Progress
-										value={formatScoreValue(
-											computedScore || 0,
-											page.data.compliance_assessment_score.max_score
-										)}
-										min={0}
-										max={100}
-									>
-										<Progress.Circle class="[--size:--spacing(10)]">
-											<Progress.CircleTrack />
-											<Progress.CircleRange
-												class={displayScoreColor(
-													computedScore,
-													page.data.compliance_assessment_score.max_score
-												)}
-											/>
-										</Progress.Circle>
-										<div class="absolute inset-0 flex items-center justify-center">
-											<span class="text-xs font-bold">{computedScore}</span>
-										</div>
-									</Progress>
+					{#if page.data.compliance_assessment_score.scoring_enabled}
+						{#if computedScore !== null}
+							{#if showScore}
+								<div class="flex flex-row items-center space-x-4">
+									<span class="font-medium">{m.score()}</span>
+									<div class="shrink-0 relative">
+										<Progress
+											value={formatScoreValue(
+												computedScore || 0,
+												page.data.compliance_assessment_score.max_score
+											)}
+											min={0}
+											max={100}
+										>
+											<Progress.Circle class="[--size:--spacing(10)]">
+												<Progress.CircleTrack />
+												<Progress.CircleRange
+													class={displayScoreColor(
+														computedScore,
+														page.data.compliance_assessment_score.max_score
+													)}
+												/>
+											</Progress.Circle>
+											<div class="absolute inset-0 flex items-center justify-center">
+												<span class="text-xs font-bold">{computedScore}</span>
+											</div>
+										</Progress>
+									</div>
 								</div>
-							</div>
-						{:else if page.data.compliance_assessment_score.scoring_enabled && data.result !== 'not_applicable'}
-							<div class="flex flex-col">
-								<Score
-									{form}
-									min_score={page.data.compliance_assessment_score.min_score}
-									max_score={page.data.compliance_assessment_score.max_score}
-									scores_definition={page.data.compliance_assessment_score.scores_definition}
-									field="score"
-									label={page.data.compliance_assessment_score.show_documentation_score
-										? m.implementationScore()
-										: m.score()}
-									disabled={!data.is_scored}
-								>
-									{#snippet left()}
-										<div>
-											<Checkbox
-												{form}
-												field="is_scored"
-												label={''}
-												helpText={m.scoringHelpText()}
-												checkboxComponent="switch"
-												classes="h-full flex flex-row items-center justify-center my-1"
-												classesContainer="h-full flex flex-row items-center space-x-4"
-											/>
-										</div>
-									{/snippet}
-								</Score>
-							</div>
-							{#if page.data.compliance_assessment_score.show_documentation_score}
+							{/if}
+						{:else if data.result !== 'not_applicable'}
+							{#if showScore}
+								<div class="flex flex-col">
+									<Score
+										{form}
+										min_score={page.data.compliance_assessment_score.min_score}
+										max_score={page.data.compliance_assessment_score.max_score}
+										scores_definition={page.data.compliance_assessment_score.scores_definition}
+										field="score"
+										label={page.data.compliance_assessment_score.show_documentation_score
+											? m.implementationScore()
+											: m.score()}
+										disabled={!data.is_scored}
+									>
+										{#snippet left()}
+											<div>
+												<Checkbox
+													{form}
+													field="is_scored"
+													label={''}
+													helpText={m.scoringHelpText()}
+													checkboxComponent="switch"
+													classes="h-full flex flex-row items-center justify-center my-1"
+													classesContainer="h-full flex flex-row items-center space-x-4"
+												/>
+											</div>
+										{/snippet}
+									</Score>
+								</div>
+							{/if}
+							{#if showDocumentationScore && page.data.compliance_assessment_score.show_documentation_score}
 								<Score
 									{form}
 									min_score={page.data.compliance_assessment_score.min_score}
