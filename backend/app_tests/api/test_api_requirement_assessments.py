@@ -501,8 +501,8 @@ class TestRequirementAssessmentListParentBulkLoad:
             if 'from "core_requirementnode"' in q["sql"].lower()
             and '"urn" in (' in q["sql"].lower()
         )
-        assert bulk_parent_loads >= 1, (
-            "expected at least one bulk parent load via urn__in"
+        assert bulk_parent_loads == 1, (
+            f"expected exactly one bulk parent load via urn__in, got {bulk_parent_loads}"
         )
 
     def test_response_correct_when_no_requirements_have_parents(
