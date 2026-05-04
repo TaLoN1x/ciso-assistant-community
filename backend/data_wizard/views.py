@@ -331,10 +331,10 @@ def _resolve_owners(record_value: Any, ctx: BaseContext) -> list[UUID]:
 
     for entry in actor_entries:
         # Try matching as user email first
-        actor = Actor.objects.filter(user__email__iexact=entry).first()
+        actor = base_query.filter(user__email__iexact=entry).first()
         if actor is None:
             # Try matching as team name
-            actor = Actor.objects.filter(team__name__iexact=entry).first()
+            actor = base_query.filter(team__name__iexact=entry).first()
         if actor is not None and actor.id not in actor_ids:
             actor_id_set.add(actor.id)
             actor_ids.append(actor.id)
@@ -765,7 +765,7 @@ class CharField(Field[str, str]):
                 record,
             )
 
-        if length > self.max_length and self.min_length != UNSET_INT:
+        if length > self.max_length and self.max_length != UNSET_INT:
             return self.error(
                 f"Value for field {self.name!r} is too long (current length={length}) the length must be at most {self.max_length}.",
                 record,
@@ -821,7 +821,7 @@ class FloatField(Field[str | int | float, float]):
 
         if value > self.max:
             return self.error(
-                f"Value for field {self.name!r} is too big, value {value!r} must be lower or equal to {self.min}.",
+                f"Value for field {self.name!r} is too big, value {value!r} must be lower or equal to {self.max}.",
                 record,
             )
 
@@ -908,12 +908,12 @@ class ManyToManyField(Field[str, list[UUID]]):
 
         if value == "":
             if self.blank:
+                return self.success(result=[])
+            else:
                 return self.error(
                     f"The ManyToManyField for field {self.name!r} can't be empty!",
                     record,
                 )
-            else:
-                return self.success()
 
         RESOLVE_FUNCTIONS: Mapping[
             type[AbstractBaseModel], Callable[[str, BaseContext], list[UUID]]
@@ -927,7 +927,7 @@ class ManyToManyField(Field[str, list[UUID]]):
 
         obj_ids = resolve_function(value, ctx)
 
-        if self.blank and len(obj_ids) == 0:
+        if len(obj_ids) == 0 and not self.blank:
             return self.error(
                 f"The ManyToManyField for field {self.name!r} can't be empty!", record
             )
