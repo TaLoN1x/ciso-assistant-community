@@ -6,6 +6,8 @@ locale is active, and falls back to default text otherwise.
 """
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils.translation import override as translation_override
 
 from core.models import (
@@ -234,9 +236,6 @@ class TestQuestionsTranslatedPrefetchCache:
 
     def test_no_queries_when_prefetched(self, translated_node):
         """With prefetch, accessing the property must not hit the DB."""
-        from django.db import connection
-        from django.test.utils import CaptureQueriesContext
-
         rn_cached = RequirementNode.objects.prefetch_related("questions__choices").get(
             pk=translated_node["rn"].pk
         )
@@ -249,9 +248,6 @@ class TestQuestionsTranslatedPrefetchCache:
 
     def test_queries_when_not_prefetched(self, translated_node):
         """Without prefetch, the property still works (fallback path)."""
-        from django.db import connection
-        from django.test.utils import CaptureQueriesContext
-
         rn = RequirementNode.objects.get(pk=translated_node["rn"].pk)
         with CaptureQueriesContext(connection) as ctx:
             with translation_override("en"):
@@ -268,9 +264,6 @@ class TestQuestionsTranslatedPrefetchCache:
         must detect the missing `choices` cache and fall back to the
         in-property `prefetch_related("choices")` so the work stays
         bounded."""
-        from django.db import connection
-        from django.test.utils import CaptureQueriesContext
-
         rn_partial = RequirementNode.objects.prefetch_related("questions").get(
             pk=translated_node["rn"].pk
         )
