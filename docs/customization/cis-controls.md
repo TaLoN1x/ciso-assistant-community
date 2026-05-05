@@ -4,6 +4,26 @@ description: Importing CIS Controls or CSA CCM
 
 # CIS Controls / Cloud Controls Matrix (CCM)
 
+### New: import the excel directly to the app to get it converted
+
+
+
+1. Go the libraries and click add your own library
+
+
+
+<figure><img src="../.gitbook/assets/image.png" alt=""><figcaption></figcaption></figure>
+
+Select the downloaded excel sheet and upload it for the engine to convert it to CISO Assistant format:\
+\
+![](<../.gitbook/assets/image (87).png>)
+
+
+
+### More
+
+
+
 {% hint style="warning" %}
 **NOTE:** This section is still under reworking. For complementary informations, please refer to the [**dedicated README on GitHub for CIS Controls**](https://github.com/intuitem/ciso-assistant-community/blob/main/tools/excel/cis/README.md) or the [**dedicated README on GitHub for CCM**](https://github.com/intuitem/ciso-assistant-community/blob/main/tools/excel/ccm/README.md).
 {% endhint %}

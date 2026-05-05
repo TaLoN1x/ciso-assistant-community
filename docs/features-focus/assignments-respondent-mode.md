@@ -16,7 +16,7 @@ Once the feature flag is enabled, the design is as follows:
 * through the assignment management, we assign a group of requirements to one or multiple users or teams
 * the assignments can be made to a user or a team, over one or multiple requirements\
   \
-  ![](../.gitbook/assets/image.png)
+  ![](<../.gitbook/assets/image (1).png>)
 
 <figure><img src="../.gitbook/assets/image (2) (1).png" alt=""><figcaption></figcaption></figure>
 
@@ -40,7 +40,7 @@ Once the feature flag is enabled, the design is as follows:
 The intereaction between the auditor and respondents follows these steps:\
 <br>
 
-<figure><img src="../.gitbook/assets/image (1).png" alt=""><figcaption></figcaption></figure>
+<figure><img src="../.gitbook/assets/image (1) (2).png" alt=""><figcaption></figcaption></figure>
 
 The default state is `draft` and you can set them and send feedbacks individually:\
 &#x20;&#x20;
