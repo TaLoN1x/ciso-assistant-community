@@ -26,9 +26,33 @@
 		tags={['assets', 'entities', 'ebios-rm', 'bulk']}
 	/>
 	<Article
-		title="Yearly Tasks Review"
-		desc="Review all recurrent tasks grouped by folder for yearly planning"
-		link="/experimental/yearly-tasks-review"
-		tags={['tasks', 'planning', 'review', 'PRO']}
+		title={m.matrixEditor()}
+		desc={m.matrixEditorDescription()}
+		link="/experimental/matrix-editor"
+		tags={['risk', 'matrix', 'editor']}
 	/>
+	<Article
+		title="Framework Builder"
+		desc="Create and edit compliance frameworks with a visual builder"
+		link="/experimental/framework-builder"
+		tags={['frameworks', 'builder', 'editor']}
+	/>
+	<Article
+		title="Bulk evidence upload"
+		desc="Upload multiple files or a whole directory as evidences, with conflict-resolution strategies (skip, add revision, replace, rename) and SHA-256 duplicate detection."
+		link="/experimental/evidence-bulk-upload"
+		tags={['evidences', 'bulk', 'upload']}
+	/>
+	<Article
+		title="Preset Editor"
+		desc="Author presets — scaffolds and steps. Create from scratch or fork a library preset."
+		link="/experimental/preset-editor"
+		tags={['presets', 'journey', 'editor']}
+	/>
+	<!-- <Article -->
+	<!-- 	title="Multi-file evidence (UX prototype)" -->
+	<!-- 	desc="Imagine an evidence whose revisions hold multiple files at once. History timeline with file-level diff (added / removed / replaced / unchanged) and arbitrary revision compare. Static fake data, no backend." -->
+	<!-- 	link="/experimental/evidence-multifile" -->
+	<!-- 	tags={['evidences', 'history', 'ux', 'prototype']} -->
+	<!-- /> -->
 </div>

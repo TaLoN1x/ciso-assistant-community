@@ -1,5 +1,7 @@
 import io
 import logging
+from types import MappingProxyType
+import re
 import pandas as pd
 from rest_framework import status
 from rest_framework.views import APIView
@@ -7,6 +9,8 @@ from rest_framework.response import Response
 from rest_framework.parsers import FileUploadParser
 
 from .serializers import LoadFileSerializer
+from core.base_models import AbstractBaseModel
+from core.utils import build_questions_dict
 from core.models import (
     Actor,
     Asset,
@@ -22,6 +26,7 @@ from core.models import (
     Policy,
     SecurityException,
     Incident,
+    Vulnerability,
 )
 from core.serializers import (
     BaseModelSerializer,
@@ -42,6 +47,7 @@ from core.serializers import (
     PolicyWriteSerializer,
     SecurityExceptionWriteSerializer,
     IncidentWriteSerializer,
+    VulnerabilityWriteSerializer,
 )
 from ebios_rm.models import (
     EbiosRMStudy,
@@ -83,16 +89,35 @@ from privacy.models import Processing, ProcessingNature
 from privacy.serializers import ProcessingWriteSerializer
 from iam.models import RoleAssignment, User
 from core.models import FilteringLabel
+from core.utils import get_global_currency
 from uuid import UUID
 from django.core.files.uploadedfile import UploadedFile
 from django.http import HttpRequest
 from datetime import datetime
-from typing import Optional, Final, ClassVar
+from typing import Optional, Final, ClassVar, Mapping, Any
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 import enum
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_container_name(request, default_prefix: str) -> str:
+    """Return a user-supplied name for an imported container object (assessment,
+    study, etc.) or a timestamped fallback.
+
+    Data Wizard imports that create a single parent object (e.g. compliance /
+    risk / findings assessments, EBIOS RM studies) let the client override the
+    auto-generated name via the ``X-Name`` header. When absent or blank,
+    ``{default_prefix}_{YYYYMMDD_HHMMSS}`` is used.
+    """
+    custom_name = ""
+    if request is not None:
+        custom_name = (request.headers.get("X-Name") or "").strip()
+    if custom_name:
+        return custom_name
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{default_prefix}_{timestamp}"
 
 
 def get_accessible_folders_map(user: User) -> dict[str, UUID]:
@@ -156,15 +181,112 @@ def _parse_datetime(value) -> Optional[str]:
     return value
 
 
-def _resolve_filtering_labels(value) -> list[UUID]:
+def _parse_time_to_seconds(s: str) -> int | None:
+    """Parse a time string like '4h', '2h30m', '24h10s', '01m30s' to seconds."""
+    if not s:
+        return None
+    s = s.strip()
+    try:
+        return int(s)
+    except ValueError:
+        pass
+    m = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", s)
+    if not m or not any(m.groups()):
+        return None
+    h, mn, sc = (int(x) if x else 0 for x in m.groups())
+    return h * 3600 + mn * 60 + sc
+
+
+def _get_security_objective_scale() -> list:
+    """Return the active security-objective scale from GlobalSettings."""
+    from global_settings.models import GlobalSettings
+
+    settings = GlobalSettings.objects.filter(name="general").first()
+    scale_key = (
+        settings.value.get("security_objective_scale", "1-4") if settings else "1-4"
+    )
+    return Asset.SECURITY_OBJECTIVES_SCALES[scale_key]
+
+
+def _reverse_scale_value(display_val: str, scale: list) -> int | None:
+    """Map a display value back to its raw 0-based index.
+
+    The scale list maps raw index → display value.  We need the reverse:
+    find the *first* index whose display value matches.
+    Supports both numeric scales (1-4, 0-3, …) and string scales (FIPS-199).
+    """
+    # Try numeric comparison first
+    try:
+        numeric = int(display_val)
+        for idx, sv in enumerate(scale):
+            if isinstance(sv, (int, float)) and int(sv) == numeric:
+                return idx
+    except (ValueError, TypeError):
+        pass
+
+    # Fall back to case-insensitive string comparison (e.g. FIPS-199)
+    display_lower = display_val.strip().lower()
+    for idx, sv in enumerate(scale):
+        if str(sv).lower() == display_lower:
+            return idx
+
+    return None
+
+
+def _parse_security_objectives(raw: str, scale: list | None = None) -> dict:
+    """Parse 'confidentiality: 3,integrity: 2' → {key: {"value": int, "is_enabled": True}}.
+
+    Values in the input are *display* values (scale-mapped).  They are
+    reverse-mapped back to the raw 0-based index before storage so that
+    an export → import round-trip is lossless.
+    """
+    result = {}
+    if not raw:
+        return result
+    if scale is None:
+        scale = _get_security_objective_scale()
+    for part in str(raw).split(","):
+        part = part.strip()
+        if ":" not in part:
+            continue
+        key, _, val = part.partition(":")
+        key = key.strip()
+        v = _reverse_scale_value(val.strip(), scale)
+        if v is not None and 0 <= v <= 4:
+            result[key] = {"value": v, "is_enabled": True}
+    return result
+
+
+def _parse_recovery_objectives(raw: str) -> dict:
+    """Parse 'rto: 4h,rpo: 5h,mtd: 6h' → {key: {"value": seconds}}."""
+    result = {}
+    if not raw:
+        return result
+    for part in str(raw).split(","):
+        part = part.strip()
+        if ":" not in part:
+            continue
+        key, _, val = part.partition(":")
+        key = key.strip()
+        secs = _parse_time_to_seconds(val.strip())
+        if secs is not None and secs >= 0:
+            result[key] = {"value": secs}
+    return result
+
+
+def _resolve_filtering_labels(value: Any) -> list[UUID]:
     """Parse pipe- or comma-separated label names and return list of FilteringLabel IDs.
 
     Labels that do not yet exist are created on the fly.
     """
-    if not value or not isinstance(value, str):
+    if not isinstance(value, str):
         return []
-    separator = "|" if "|" in value else ","
-    label_names = [name.strip() for name in value.split(separator) if name.strip()]
+
+    value = value.strip()
+    if not value:
+        return []
+
+    label_names = set(name.strip() for name in re.split(r"[|,]", value) if name.strip())
     label_ids: list[UUID] = []
     for label_name in label_names:
         label = FilteringLabel.objects.filter(label=label_name).first()
@@ -174,9 +296,31 @@ def _resolve_filtering_labels(value) -> list[UUID]:
                 label.full_clean()
                 label.save()
             except Exception:
-                continue
+                logging.error(f"Failed to save label: {value}")
         label_ids.append(label.id)
     return label_ids
+
+
+def _resolve_vulnerabilities(value, folder) -> tuple[list[UUID], list[str]]:
+    """
+    Parse pipe- or comma-separated vulnerability names and return a tuple of
+    (list of resolved Vulnerability IDs, list of names that failed to resolve).
+    """
+    if not value or not isinstance(value, str):
+        return [], []
+    vuln_names = [name.strip() for name in re.split(r"[|,]", value) if name.strip()]
+    vuln_ids: list[UUID] = []
+    failed_names: list[str] = []
+    for vuln_name in vuln_names:
+        try:
+            vuln, _created = Vulnerability.objects.get_or_create(
+                name=vuln_name, folder=folder
+            )
+            vuln_ids.append(vuln.id)
+        except Exception:
+            logging.exception(f"Failed to resolve vulnerability {vuln_name}")
+            failed_names.append(vuln_name)
+    return vuln_ids, failed_names
 
 
 class RecordFileType(enum.StrEnum):
@@ -221,6 +365,7 @@ class ModelType(enum.StrEnum):
     POLICY = "Policy"
     SECURITY_EXCEPTION = "SecurityException"
     INCIDENT = "Incident"
+    VULNERABILITY = "Vulnerability"
     BUSINESS_IMPACT_ANALYSIS = "BusinessImpactAnalysis"
 
     @staticmethod
@@ -236,6 +381,7 @@ class ModelType(enum.StrEnum):
 class Error:
     record: dict
     error: str
+    is_warning: bool = False
 
     def to_dict(self) -> dict:
         return {"record": self.record, "error": self.error}
@@ -249,6 +395,7 @@ class Result:
     failed: int = 0
     stopped: bool = False
     errors: list[Error] = field(default_factory=list)
+    warnings: list[Error] = field(default_factory=list)
     details: dict = field(default_factory=dict)
 
     @property
@@ -277,6 +424,11 @@ class Result:
             "failed": self.failed,
             "stopped": self.stopped,
             "errors": [error.to_dict() for error in self.errors],
+            **(
+                {"warnings": [w.to_dict() for w in self.warnings]}
+                if self.warnings
+                else {}
+            ),
             **({"details": self.details} if self.details else {}),
         }
 
@@ -292,11 +444,11 @@ class BaseContext:
     on_conflict: ConflictMode = ConflictMode.STOP
 
 
-class RecordConsumer[Context](ABC):
+class RecordConsumer[Context = None](ABC):
     SERIALIZER_CLASS: ClassVar[type[BaseModelSerializer]]
     # Maps record_data keys to possible source record keys when they differ.
     # Override in subclasses that use alternative/aliased column names.
-    SOURCE_KEY_MAP: ClassVar[dict[str, tuple[str, ...]]] = {}
+    SOURCE_KEY_MAP: ClassVar[Mapping[str, list[str]]] = MappingProxyType({})
 
     def __init__(self, base_context: BaseContext):
         self.request = base_context.request
@@ -324,7 +476,7 @@ class RecordConsumer[Context](ABC):
     ) -> tuple[dict, Optional[Error]]:
         pass
 
-    def find_existing(self, record_data: dict):
+    def find_existing(self, record_data: dict) -> Optional[type[AbstractBaseModel]]:
         """Find an existing record matching this data based on the model's fields_to_check."""
         model_class = self.SERIALIZER_CLASS.Meta.model
         fields_to_check = getattr(model_class, "fields_to_check", [])
@@ -362,7 +514,7 @@ class RecordConsumer[Context](ABC):
             if key in identity_fields:
                 update_data[key] = value
                 continue
-            source_keys = self.SOURCE_KEY_MAP.get(key, (key,))
+            source_keys = self.SOURCE_KEY_MAP.get(key, [key])
             # For M2M owner, propagate even when blank so UPDATE mode clears stale owners.
             if key == "owner" and any(sk in record for sk in source_keys):
                 update_data[key] = value
@@ -389,11 +541,14 @@ class RecordConsumer[Context](ABC):
         for record in records:
             record_data, error = self.prepare_create(record, context)
             if error is not None:
-                results.add_error(error)
-                if self.on_conflict == ConflictMode.STOP:
-                    results.stopped = True
-                    break
-                continue
+                if error.is_warning:
+                    results.warnings.append(error)
+                else:
+                    results.add_error(error)
+                    if self.on_conflict == ConflictMode.STOP:
+                        results.stopped = True
+                        break
+                    continue
 
             existing = None
             internal_id = record.get("internal_id")
@@ -464,16 +619,19 @@ class RecordConsumer[Context](ABC):
         return results
 
 
-class AssetRecordConsumer(RecordConsumer[None]):
+class AssetRecordConsumer(RecordConsumer[list]):
     """
     Consumer for importing Asset records.
     Supports parent_assets linking via ref_id in a second pass.
     """
 
     SERIALIZER_CLASS = AssetWriteSerializer
-    SOURCE_KEY_MAP: ClassVar[dict[str, tuple[str, ...]]] = {
-        "reference_link": ("reference_link", "link"),
-    }
+    SOURCE_KEY_MAP: ClassVar[Mapping[str, list[str]]] = MappingProxyType(
+        {
+            "reference_link": ["reference_link", "link"],
+            "filtering_labels": ["filtering_labels", "labels", "étiquette", "label"],
+        }
+    )
     TYPE_MAP: Final[dict[str, str]] = {
         "primary": "PR",
         "pr": "PR",
@@ -482,10 +640,10 @@ class AssetRecordConsumer(RecordConsumer[None]):
     }
 
     def create_context(self):
-        return None, None
+        return _get_security_objective_scale(), None
 
     def prepare_create(
-        self, record: dict, context: None
+        self, record: dict, context: list
     ) -> tuple[dict, Optional[Error]]:
         domain = self.folder_id
         domain_name = record.get("domain")
@@ -503,6 +661,16 @@ class AssetRecordConsumer(RecordConsumer[None]):
                 asset_type.lower().strip(), asset_type.upper()
             )
 
+        record_is_business_function = record.get("is_business_function", False)
+        is_business_function = False
+        if isinstance(record_is_business_function, str):
+            is_business_function = record_is_business_function.strip().lower() in [
+                "true",
+                "yes",
+            ]
+        elif isinstance(record_is_business_function, bool):
+            is_business_function = record_is_business_function
+
         data = {
             "ref_id": record.get("ref_id", ""),
             "name": name,
@@ -513,12 +681,57 @@ class AssetRecordConsumer(RecordConsumer[None]):
             "reference_link": record.get("reference_link", "")
             or record.get("link", ""),
             "observation": record.get("observation", ""),
+            "is_business_function": is_business_function,
         }
 
-        filtering_labels = _resolve_filtering_labels(record.get("filtering_labels"))
+        raw_labels = (
+            record.get("filtering_labels")
+            or record.get("labels")
+            or record.get("étiquette")
+            or record.get("label")
+        )
+        filtering_labels = _resolve_filtering_labels(raw_labels)
         if filtering_labels:
             data["filtering_labels"] = filtering_labels
 
+        # Accept both export column names and native field names for support assets
+        raw_sec = record.get("security_objectives") or record.get(
+            "security_capabilities", ""
+        )
+        raw_rec = record.get("disaster_recovery_objectives") or record.get(
+            "recovery_capabilities", ""
+        )
+
+        sec_objectives = _parse_security_objectives(raw_sec, scale=context)
+        rec_objectives = _parse_recovery_objectives(raw_rec)
+
+        parse_warning_msgs = []
+        if raw_sec and not sec_objectives:
+            parse_warning_msgs.append(
+                f"Could not parse security_objectives: '{raw_sec}'"
+            )
+        if raw_rec and not rec_objectives:
+            parse_warning_msgs.append(
+                f"Could not parse disaster_recovery_objectives: '{raw_rec}'"
+            )
+
+        if asset_type == "PR":
+            if sec_objectives:
+                data["security_objectives"] = {"objectives": sec_objectives}
+            if rec_objectives:
+                data["disaster_recovery_objectives"] = {"objectives": rec_objectives}
+        else:  # SP (support)
+            if sec_objectives:
+                data["security_capabilities"] = {"objectives": sec_objectives}
+            if rec_objectives:
+                data["recovery_capabilities"] = {"objectives": rec_objectives}
+
+        if parse_warning_msgs:
+            return data, Error(
+                record=record,
+                error="; ".join(parse_warning_msgs),
+                is_warning=True,
+            )
         return data, None
 
     def process_records(self, records: list[dict]) -> Result:
@@ -564,7 +777,12 @@ class AssetRecordConsumer(RecordConsumer[None]):
         return results
 
 
-class AppliedControlRecordConsumer(RecordConsumer[None]):
+@dataclass(frozen=True)
+class AppliedControlContext:
+    currency: str = field(default_factory=get_global_currency)
+
+
+class AppliedControlRecordConsumer(RecordConsumer[AppliedControlContext]):
     """
     Consumer for importing AppliedControl records.
     Supports reference_control linking via ref_id and owner resolution
@@ -576,6 +794,14 @@ class AppliedControlRecordConsumer(RecordConsumer[None]):
         "control_impact": ("control_impact", "impact"),
         "reference_control": ("reference_control", "reference_control_ref_id"),
         "owner": ("owner",),
+        "cost": (
+            "cost_currency",
+            "cost_amortization_period",
+            "cost_build_fixed",
+            "cost_build_people_days",
+            "cost_run_fixed",
+            "cost_run_people_days",
+        ),
     }
     IMPACT_MAP: Final[dict[str, int]] = {
         "very low": 1,
@@ -598,12 +824,21 @@ class AppliedControlRecordConsumer(RecordConsumer[None]):
         "extralarge": "XL",
         "xl": "XL",
     }
+    COST_KEYS: Final[frozenset[str]] = frozenset(
+        {
+            "cost_amortization_period",
+            "cost_build_fixed",
+            "cost_build_people_days",
+            "cost_run_fixed",
+            "cost_run_people_days",
+        }
+    )
 
-    def create_context(self):
-        return None, None
+    def create_context(self) -> tuple[AppliedControlContext, Optional[Error]]:
+        return AppliedControlContext(), None
 
     def prepare_create(
-        self, record: dict, context: None
+        self, record: dict, context: AppliedControlContext
     ) -> tuple[dict, Optional[Error]]:
         domain = self.folder_id
         domain_name = record.get("domain")
@@ -656,15 +891,23 @@ class AppliedControlRecordConsumer(RecordConsumer[None]):
             if ref_control:
                 reference_control_id = ref_control.id
 
+        csf_function = record.get("csf_function", "govern")
+        if isinstance(csf_function, str):
+            csf_function = csf_function.lower()
+
+        category = record.get("category", "")
+        if isinstance(category, str):
+            category = category.lower()
+
         data = {
             "ref_id": record.get("ref_id", ""),
             "name": name,
             "description": record.get("description", ""),
-            "category": record.get("category", ""),
+            "category": category,
             "folder": domain,
             "status": record.get("status", "to_do"),
             "priority": priority,
-            "csf_function": record.get("csf_function", "govern"),
+            "csf_function": csf_function,
             "effort": effort,
             "control_impact": control_impact,
             "link": record.get("link", ""),
@@ -676,6 +919,25 @@ class AppliedControlRecordConsumer(RecordConsumer[None]):
 
         if reference_control_id:
             data["reference_control"] = reference_control_id
+
+        has_cost_related_key = any(
+            key in self.COST_KEYS and record.get(key) not in (None, "")
+            for key in record.keys()
+        )
+        if has_cost_related_key:
+            cost = {
+                "currency": record.get("cost_currency") or context.currency,
+                "amortization_period": int(record.get("cost_amortization_period") or 1),
+                "build": {
+                    "fixed_cost": int(record.get("cost_build_fixed") or 0),
+                    "people_days": int(record.get("cost_build_people_days") or 0),
+                },
+                "run": {
+                    "fixed_cost": int(record.get("cost_run_fixed") or 0),
+                    "people_days": int(record.get("cost_run_people_days") or 0),
+                },
+            }
+            data["cost"] = cost
 
         filtering_labels = _resolve_filtering_labels(record.get("filtering_labels"))
         if filtering_labels:
@@ -690,16 +952,16 @@ class AppliedControlRecordConsumer(RecordConsumer[None]):
         return data, None
 
     @staticmethod
-    def _resolve_owners(value) -> list:
+    def _resolve_owners(value: Any) -> list[UUID]:
         """Resolve semicolon-separated user emails or team names to Actor IDs.
 
         Each entry is matched first as a user email, then as a team name.
         Unresolvable entries are silently skipped.
         """
-        if not value or not isinstance(value, str):
+        if not isinstance(value, str):
             return []
 
-        entries = [entry.strip() for entry in value.split(";") if entry.strip()]
+        entries = set(entry.strip() for entry in value.split(";"))
         actor_ids = []
 
         for entry in entries:
@@ -718,7 +980,7 @@ class AppliedControlRecordConsumer(RecordConsumer[None]):
         return actor_ids
 
 
-class EvidenceRecordConsumer(RecordConsumer[None]):
+class EvidenceRecordConsumer(RecordConsumer):
     SERIALIZER_CLASS = EvidenceWriteSerializer
 
     def create_context(self):
@@ -750,10 +1012,10 @@ class EvidenceRecordConsumer(RecordConsumer[None]):
         return data, None
 
 
-class UserRecordConsumer(RecordConsumer[None]):
+class UserRecordConsumer(RecordConsumer):
     SERIALIZER_CLASS = UserWriteSerializer
 
-    def find_existing(self, record_data: dict):
+    def find_existing(self, record_data: dict) -> Optional[User]:
         email = record_data.get("email")
         if not email:
             return None
@@ -776,8 +1038,59 @@ class UserRecordConsumer(RecordConsumer[None]):
         }, None
 
 
-class PerimeterRecordConsumer(RecordConsumer[None]):
+class PerimeterRecordConsumer(RecordConsumer):
     SERIALIZER_CLASS = PerimeterWriteSerializer
+    SOURCE_KEY_MAP: ClassVar[dict[str, tuple[str, ...]]] = {
+        "lc_status": ("lc_status", "status"),
+        "default_assignee": ("default_assignee",),
+    }
+    _LC_STATUS_BY_KEY: ClassVar[dict[str, str]] = {
+        key.lower(): key for key, _ in Perimeter.PRJ_LC_STATUS
+    }
+    _LC_STATUS_BY_LABEL: ClassVar[dict[str, str]] = {
+        str(label).strip().lower(): key for key, label in Perimeter.PRJ_LC_STATUS
+    }
+
+    @classmethod
+    def _normalize_lc_status(cls, value: str) -> Optional[str]:
+        normalized = value.strip().lower()
+        if not normalized:
+            return None
+        return cls._LC_STATUS_BY_KEY.get(normalized) or cls._LC_STATUS_BY_LABEL.get(
+            normalized
+        )
+
+    def _build_update_data(self, record: dict, record_data: dict) -> dict:
+        update_data = super()._build_update_data(record, record_data)
+
+        # Keep parity with AppliedControl.owner behavior: if the column is
+        # present (even empty), propagate it so UPDATE mode can clear stale M2M.
+        if "default_assignee" not in update_data and "default_assignee" in record:
+            update_data["default_assignee"] = record_data.get("default_assignee", [])
+
+        return update_data
+
+    @staticmethod
+    def _resolve_default_assignees(value) -> list[UUID]:
+        if not isinstance(value, str):
+            return []
+
+        entries = [entry.strip() for entry in value.split(";") if entry.strip()]
+        actor_ids = []
+
+        for entry in entries:
+            actor = Actor.objects.filter(user__email__iexact=entry).first()
+            if actor is None:
+                actor = Actor.objects.filter(team__name__iexact=entry).first()
+            if actor is not None:
+                actor_ids.append(actor.id)
+            else:
+                logger.warning(
+                    "Could not resolve perimeter default assignee %r; skipping.",
+                    entry,
+                )
+
+        return actor_ids
 
     def create_context(self):
         return None, None
@@ -794,16 +1107,40 @@ class PerimeterRecordConsumer(RecordConsumer[None]):
         if not name:
             return {}, Error(record=record, error="Name field is mandatory")
 
-        return {
+        raw_lc_status = record.get("lc_status") or record.get("status")
+        lc_status = "in_design"
+        if raw_lc_status not in (None, ""):
+            normalized_status = self._normalize_lc_status(str(raw_lc_status))
+            if normalized_status is None:
+                allowed = ", ".join(k for k, _ in Perimeter.PRJ_LC_STATUS)
+                return {}, Error(
+                    record=record,
+                    error=(
+                        f"Unsupported perimeter status '{raw_lc_status}'. "
+                        f"Allowed values: {allowed}"
+                    ),
+                )
+            lc_status = normalized_status
+
+        default_assignee = self._resolve_default_assignees(
+            record.get("default_assignee")
+        )
+
+        data = {
             "name": name,
             "folder": domain,
             "ref_id": record.get("ref_id", ""),
             "description": record.get("description", ""),
-            "status": record.get("status"),
-        }, None
+            "lc_status": lc_status,
+        }
+
+        if "default_assignee" in record:
+            data["default_assignee"] = default_assignee
+
+        return data, None
 
 
-class ThreatRecordConsumer(RecordConsumer[None]):
+class ThreatRecordConsumer(RecordConsumer):
     SERIALIZER_CLASS = ThreatWriteSerializer
 
     def create_context(self):
@@ -829,11 +1166,13 @@ class ThreatRecordConsumer(RecordConsumer[None]):
         }, None
 
 
-class ReferenceControlRecordConsumer(RecordConsumer[None]):
+class ReferenceControlRecordConsumer(RecordConsumer):
     SERIALIZER_CLASS = ReferenceControlWriteSerializer
-    SOURCE_KEY_MAP: ClassVar[dict[str, tuple[str, ...]]] = {
-        "csf_function": ("function",),
-    }
+    SOURCE_KEY_MAP: ClassVar[Mapping[str, list[str]]] = MappingProxyType(
+        {
+            "csf_function": ["function"],
+        }
+    )
     CATEGORY_MAP: Final[dict[str, str]] = {
         "policy": "policy",
         "process": "process",
@@ -894,6 +1233,7 @@ class ReferenceControlRecordConsumer(RecordConsumer[None]):
 @dataclass(frozen=True)
 class FindingsAssessmentContext:
     findings_assessment: FindingsAssessment
+    folder: Folder
 
 
 class FindingsAssessmentRecordConsumer(RecordConsumer[FindingsAssessmentContext]):
@@ -913,8 +1253,7 @@ class FindingsAssessmentRecordConsumer(RecordConsumer[FindingsAssessmentContext]
             perimeter = Perimeter.objects.get(id=perimeter_id)
             folder_id = perimeter.folder.id
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            assessment_name = f"Followup_{timestamp}"
+            assessment_name = resolve_container_name(self.request, "Followup")
             assessment_data = {
                 "name": assessment_name,
                 "perimeter": perimeter_id,
@@ -933,7 +1272,8 @@ class FindingsAssessmentRecordConsumer(RecordConsumer[FindingsAssessmentContext]
                 )
 
                 return FindingsAssessmentContext(
-                    findings_assessment=findings_assessment
+                    findings_assessment=findings_assessment,
+                    folder=perimeter.folder,
                 ), None
             return None, Error(record=assessment_data, error=str(serializer.errors))
 
@@ -962,6 +1302,18 @@ class FindingsAssessmentRecordConsumer(RecordConsumer[FindingsAssessmentContext]
             priority = None
 
         filtering_label_ids = _resolve_filtering_labels(record.get("filtering_labels"))
+        vulnerabilities, failed_vulnerabilities = _resolve_vulnerabilities(
+            record.get("vulnerabilities"), context.folder
+        )
+
+        if failed_vulnerabilities:
+            return {}, Error(
+                record=record,
+                error=(
+                    "Failed to create or retrieve thiese vulnerabilities: "
+                    + ", ".join(failed_vulnerabilities)
+                ),
+            )
 
         finding_data = {
             "name": name,
@@ -974,15 +1326,23 @@ class FindingsAssessmentRecordConsumer(RecordConsumer[FindingsAssessmentContext]
             "eta": _parse_date(record.get("eta")),
             "due_date": _parse_date(record.get("due_date")),
             "observation": record.get("observation", ""),
+            "vulnerabilities": vulnerabilities,
         }
 
         if priority is not None:
             finding_data["priority"] = priority
 
+        if failed_vulnerabilities:
+            return finding_data, Error(
+                record=record,
+                error=f"Could not resolve vulnerabilities: {', '.join(failed_vulnerabilities)}",
+                is_warning=True,
+            )
+
         return finding_data, None
 
 
-class PolicyRecordConsumer(RecordConsumer[None]):
+class PolicyRecordConsumer(RecordConsumer):
     """
     Consumer for importing Policy records.
     Policy is a proxy model of AppliedControl with category='policy'.
@@ -1034,7 +1394,7 @@ class PolicyRecordConsumer(RecordConsumer[None]):
         return data, None
 
 
-class SecurityExceptionRecordConsumer(RecordConsumer[None]):
+class SecurityExceptionRecordConsumer(RecordConsumer):
     """
     Consumer for importing SecurityException records.
     """
@@ -1101,7 +1461,7 @@ class SecurityExceptionRecordConsumer(RecordConsumer[None]):
         }, None
 
 
-class IncidentRecordConsumer(RecordConsumer[None]):
+class IncidentRecordConsumer(RecordConsumer):
     """
     Consumer for importing Incident records.
     """
@@ -1197,18 +1557,407 @@ class IncidentRecordConsumer(RecordConsumer[None]):
         return data, None
 
 
-class BusinessImpactAnalysisRecordConsumer(RecordConsumer[None]):
-    SERIALIZER_CLASS = BusinessImpactAnalysisWriteSerializer
-    SOURCE_KEY_MAP: ClassVar[dict[str, tuple[str, ...]]] = {
-        "perimeter": ("perimeter", "perimeter_ref_id", "perimeter_name"),
-        "risk_matrix": (
-            "risk_matrix",
-            "risk_matrix_ref_id",
-            "risk_matrix_name",
-            "matrix",
-        ),
-        "bia": ("bia", "bia_name"),
+class FolderRecordConsumer(RecordConsumer):
+    """
+    Consumer for importing Folder (domain) records.
+    Supports stop/skip/update conflict management by name + parent_folder.
+    """
+
+    SERIALIZER_CLASS = FolderWriteSerializer
+    SOURCE_KEY_MAP: ClassVar[Mapping[str, list[str]]] = MappingProxyType(
+        {
+            "parent_folder": ["domain"],
+        }
+    )
+
+    def create_context(self):
+        return None, None
+
+    def find_existing(self, record_data: dict) -> Optional[Folder]:
+        name = record_data.get("name")
+        if not name:
+            return None
+        query: dict = {"name__iexact": name}
+        parent_folder = record_data.get("parent_folder")
+        if parent_folder:
+            query["parent_folder"] = parent_folder
+        return Folder.objects.filter(**query).first()
+
+    def prepare_create(
+        self, record: dict, context: None
+    ) -> tuple[dict, Optional[Error]]:
+        name = record.get("name")
+        if not name:
+            return {}, Error(record=record, error="Name field is mandatory")
+
+        domain_name = str(record.get("domain", "")).strip()
+        if domain_name:
+            matching_folders = Folder.objects.filter(name__iexact=domain_name)
+            count = matching_folders.count()
+            if count == 0:
+                return {}, Error(
+                    record=record,
+                    error=f"Parent folder '{domain_name}' not found",
+                )
+            if count > 1:
+                return {}, Error(
+                    record=record,
+                    error=f"Multiple folders named '{domain_name}' found; please use a unique name",
+                )
+            parent_folder_id = matching_folders.first().id
+        else:
+            parent_folder_id = Folder.get_root_folder().id
+
+        return {
+            "name": name,
+            "description": record.get("description", ""),
+            "parent_folder": parent_folder_id,
+        }, None
+
+
+class VulnerabilityRecordConsumer(RecordConsumer[None]):
+    """
+    Consumer for importing Vulnerability records.
+    """
+
+    SERIALIZER_CLASS = VulnerabilityWriteSerializer
+    SEVERITY_MAP: Final[dict[str, int]] = {
+        "undefined": -1,
+        "info": 0,
+        "low": 1,
+        "medium": 2,
+        "high": 3,
+        "critical": 4,
     }
+    STATUS_MAP: Final[dict[str, str]] = {
+        "undefined": "--",
+        "potential": "potential",
+        "exploitable": "exploitable",
+        "mitigated": "mitigated",
+        "fixed": "fixed",
+        "not exploitable": "not_exploitable",
+        "unaffected": "unaffected",
+    }
+
+    def create_context(self):
+        return None, None
+
+    def prepare_create(
+        self, record: dict, context: None
+    ) -> tuple[dict, Optional[Error]]:
+        name = record.get("name")
+        if not name:
+            return {}, Error(record=record, error="Name field is mandatory")
+
+        folder_id = self.folder_id
+
+        raw_severity = record.get("severity")
+        if isinstance(raw_severity, str):
+            severity = self.SEVERITY_MAP.get(raw_severity.lower().strip(), -1)
+        elif isinstance(raw_severity, int) and -1 <= raw_severity <= 4:
+            severity = raw_severity
+        else:
+            severity = -1
+
+        raw_status = record.get("status")
+        if isinstance(raw_status, str):
+            status = self.STATUS_MAP.get(raw_status.lower().strip(), "--")
+        else:
+            status = "--"
+
+        applied_controls = []
+        for ap_name in (record.get("applied_controls") or "").splitlines():
+            ap_name = ap_name.strip()
+            if not ap_name:
+                continue
+            obj = AppliedControl.objects.filter(
+                name=ap_name, folder_id=folder_id
+            ).first()
+            if obj:
+                applied_controls.append(obj.id)
+            else:
+                return {}, Error(
+                    record=record,
+                    error=f"No applied control named '{ap_name}' found in folder",
+                )
+
+        assets = []
+        for asset_name in (record.get("assets") or "").splitlines():
+            asset_name = asset_name.strip()
+            if not asset_name:
+                continue
+            obj = Asset.objects.filter(name=asset_name, folder_id=folder_id).first()
+            if obj:
+                assets.append(obj.id)
+            else:
+                return {}, Error(
+                    record=record,
+                    error=f"No asset named '{asset_name}' found in folder",
+                )
+
+        security_exceptions = []
+        for se_name in (record.get("security_exceptions") or "").splitlines():
+            se_name = se_name.strip()
+            if not se_name:
+                continue
+            obj = SecurityException.objects.filter(
+                name=se_name, folder_id=folder_id
+            ).first()
+            if obj:
+                security_exceptions.append(obj.id)
+            else:
+                return {}, Error(
+                    record=record,
+                    error=f"No security exception named '{se_name}' found in folder",
+                )
+
+        data = {
+            "ref_id": record.get("ref_id", ""),
+            "name": name,
+            "description": record.get("description", ""),
+            "status": status,
+            "severity": severity,
+            "folder": folder_id,
+            "applied_controls": applied_controls,
+            "assets": assets,
+            "security_exceptions": security_exceptions,
+        }
+
+        detected_at = _parse_date(record.get("detected_at"))
+        if detected_at:
+            data["detected_at"] = detected_at
+
+        due_date = _parse_date(record.get("due_date"))
+        if due_date:
+            data["due_date"] = due_date
+
+        filtering_labels = _resolve_filtering_labels(record.get("filtering_labels"))
+        if filtering_labels:
+            data["filtering_labels"] = filtering_labels
+
+        return data, None
+
+    def find_existing(self, record_data: dict):
+        folder_id = record_data.get("folder")
+        ref_id = record_data.get("ref_id")
+        if ref_id:
+            existing = Vulnerability.objects.filter(
+                ref_id=ref_id, folder_id=folder_id
+            ).first()
+            if existing:
+                return existing
+        return Vulnerability.objects.filter(
+            name=record_data.get("name"), folder_id=folder_id
+        ).first()
+
+
+class ElementaryActionRecordConsumer(RecordConsumer):
+    """
+    Consumer for importing ElementaryAction records.
+    Supports stop/skip/update conflict management by name + folder.
+    """
+
+    SERIALIZER_CLASS = ElementaryActionWriteSerializer
+    ATTACK_STAGE_MAP: ClassVar[Mapping[str, int]] = MappingProxyType(
+        {
+            # English
+            "know": 0,
+            "reconnaissance": 0,
+            "ebiosreconnaissance": 0,
+            "enter": 1,
+            "initial access": 1,
+            "ebiosinitialaccess": 1,
+            "discover": 2,
+            "discovery": 2,
+            "ebiosdiscovery": 2,
+            "exploit": 3,
+            "exploitation": 3,
+            "ebiosexploitation": 3,
+            # French
+            "connaitre": 0,
+            "connaître": 0,
+            "pénétrer": 1,
+            "penetrer": 1,
+            "entrer": 1,
+            "trouver": 2,
+            "découvrir": 2,
+            "decouvrir": 2,
+            "exploiter": 3,
+        }
+    )
+    ICON_MAP: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {
+            icon.lower(): icon
+            for icon in [
+                "server",
+                "computer",
+                "cloud",
+                "file",
+                "diamond",
+                "phone",
+                "cube",
+                "blocks",
+                "shapes",
+                "network",
+                "database",
+                "key",
+                "search",
+                "carrot",
+                "money",
+                "skull",
+                "globe",
+                "usb",
+            ]
+        }
+    )
+
+    def create_context(self):
+        return None, None
+
+    def prepare_create(
+        self, record: dict, context: None
+    ) -> tuple[dict, Optional[Error]]:
+        domain = self.folder_id
+        domain_name = record.get("domain")
+        if domain_name:
+            domain = self.folders_map.get(str(domain_name).lower(), self.folder_id)
+
+        name = record.get("name")
+        if not name:
+            return {}, Error(record=record, error="Name field is mandatory")
+
+        record_attack_stage = record.get("attack_stage")
+        attack_stage = 0
+
+        if record_attack_stage:
+            attack_stage = self.ATTACK_STAGE_MAP.get(
+                str(record_attack_stage).strip().lower(), 0
+            )
+
+        data: dict = {
+            "name": name,
+            "description": record.get("description", ""),
+            "ref_id": record.get("ref_id", ""),
+            "folder": domain,
+            "attack_stage": attack_stage,
+        }
+
+        record_icon = record.get("icon")
+        if record_icon:
+            icon = self.ICON_MAP.get(str(record_icon).strip().lower())
+            if icon is not None:
+                data["icon"] = icon
+
+        return data, None
+
+
+class ProcessingRecordConsumer(RecordConsumer):
+    """
+    Consumer for importing Processing (privacy) records.
+    Supports stop/skip/update conflict management by name + folder.
+    M2M fields (nature, assigned_to, filtering_labels) are resolved to IDs
+    and passed directly to the serializer.
+    """
+
+    SERIALIZER_CLASS = ProcessingWriteSerializer
+    SOURCE_KEY_MAP: ClassVar[Mapping[str, list[str]]] = MappingProxyType(
+        {
+            "nature": ["processing_nature"],
+            "filtering_labels": ["labels"],
+        }
+    )
+    _STATUS_KEYS: ClassVar[frozenset[str]] = frozenset(
+        k for k, _ in Processing.STATUS_CHOICES
+    )
+    _STATUS_BY_DISPLAY: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {v.lower(): k for k, v in Processing.STATUS_CHOICES}
+    )
+
+    def _build_update_data(self, record: dict, record_data: dict) -> dict:
+        update_data = super()._build_update_data(record, record_data)
+        if "assigned_to" not in update_data and "assigned_to" in record:
+            update_data["assigned_to"] = record_data.get("assigned_to", [])
+        return update_data
+
+    def create_context(self):
+        return None, None
+
+    def prepare_create(
+        self, record: dict, context: None
+    ) -> tuple[dict, Optional[Error]]:
+        domain = self.folder_id
+        domain_name = record.get("domain")
+        if domain_name:
+            domain = self.folders_map.get(str(domain_name).lower(), self.folder_id)
+
+        name = record.get("name")
+        if not name:
+            return {}, Error(record=record, error="Name field is mandatory")
+
+        # Accept both raw key (e.g. "privacy_draft") and display label (e.g. "Draft")
+        record_status_value = record.get("status", "")
+        if record_status_value in self._STATUS_KEYS:
+            status_value = record_status_value
+        elif str(record_status_value).lower() in self._STATUS_BY_DISPLAY:
+            status_value = self._STATUS_BY_DISPLAY[str(record_status_value).lower()]
+        else:
+            status_value = "privacy_draft"
+
+        data = {
+            "name": name,
+            "description": record.get("description", ""),
+            "ref_id": record.get("ref_id", ""),
+            "folder": domain,
+            "status": status_value,
+            "dpia_required": record.get("dpia_required", False),
+            "dpia_reference": record.get("dpia_reference", ""),
+        }
+
+        # Resolve M2M: nature (by name)
+        record_processing_nature = record.get("processing_nature")
+        if record_processing_nature:
+            nature_names = [
+                nature_name.strip()
+                for nature_name in str(record_processing_nature).split(",")
+            ]
+            data["nature"] = list(
+                ProcessingNature.objects.filter(name__in=nature_names).values_list(
+                    "id", flat=True
+                )
+            )
+
+        # Resolve M2M: assigned_to (by user email → Actor)
+        record_assigned_to = record.get("assigned_to")
+        if record_assigned_to:
+            emails = [email.strip() for email in str(record_assigned_to).split(",")]
+            data["assigned_to"] = list(
+                Actor.objects.filter(user__email__in=emails).values_list(
+                    "id", flat=True
+                )
+            )
+
+        # Resolve M2M: filtering_labels (by label name, create if missing)
+        label_ids = _resolve_filtering_labels(record.get("labels"))
+        if label_ids:
+            data["filtering_labels"] = label_ids
+
+        return data, None
+
+
+class BusinessImpactAnalysisRecordConsumer(RecordConsumer):
+    SERIALIZER_CLASS = BusinessImpactAnalysisWriteSerializer
+    SOURCE_KEY_MAP: ClassVar[Mapping[str, list[str]]] = MappingProxyType(
+        {
+            "perimeter": ["perimeter", "perimeter_ref_id", "perimeter_name"],
+            "risk_matrix": [
+                "risk_matrix",
+                "risk_matrix_ref_id",
+                "risk_matrix_name",
+                "matrix",
+            ],
+            "bia": ["bia", "bia_name"],
+        }
+    )
 
     def create_context(self):
         return None, None
@@ -1341,12 +2090,14 @@ class BusinessImpactAnalysisRecordConsumer(RecordConsumer[None]):
         }, None
 
 
-class AssetAssessmentRecordConsumer(RecordConsumer[None]):
+class AssetAssessmentRecordConsumer(RecordConsumer):
     SERIALIZER_CLASS = AssetAssessmentWriteSerializer
-    SOURCE_KEY_MAP: ClassVar[dict[str, tuple[str, ...]]] = {
-        "bia": ("bia", "bia_name"),
-        "asset": ("asset", "asset_ref_id", "asset_name"),
-    }
+    SOURCE_KEY_MAP: ClassVar[Mapping[str, list[str]]] = MappingProxyType(
+        {
+            "bia": ["bia", "bia_name"],
+            "asset": ["asset", "asset_ref_id", "asset_name"],
+        }
+    )
 
     def create_context(self):
         return None, None
@@ -1485,7 +2236,7 @@ class AssetAssessmentRecordConsumer(RecordConsumer[None]):
             resolved.append(evidence.id)
         return resolved, None
 
-    def find_existing(self, record_data: dict):
+    def find_existing(self, record_data: dict) -> Optional[AssetAssessment]:
         bia_id = record_data.get("bia")
         asset_id = record_data.get("asset")
         if not bia_id or not asset_id:
@@ -1535,13 +2286,15 @@ class AssetAssessmentRecordConsumer(RecordConsumer[None]):
         }, None
 
 
-class EscalationThresholdRecordConsumer(RecordConsumer[None]):
+class EscalationThresholdRecordConsumer(RecordConsumer):
     SERIALIZER_CLASS = EscalationThresholdWriteSerializer
-    SOURCE_KEY_MAP: ClassVar[dict[str, tuple[str, ...]]] = {
-        "bia": ("bia", "bia_name"),
-        "asset": ("asset", "asset_ref_id", "asset_name"),
-        "asset_assessment": ("asset_assessment",),
-    }
+    SOURCE_KEY_MAP: ClassVar[Mapping[str, list[str]]] = MappingProxyType(
+        {
+            "bia": ["bia", "bia_name"],
+            "asset": ["asset", "asset_ref_id", "asset_name"],
+            "asset_assessment": ["asset_assessment"],
+        }
+    )
 
     def create_context(self):
         return None, None
@@ -1652,7 +2405,7 @@ class EscalationThresholdRecordConsumer(RecordConsumer[None]):
             resolved.append(qualification.id)
         return resolved, None
 
-    def find_existing(self, record_data: dict):
+    def find_existing(self, record_data: dict) -> Optional[EscalationThreshold]:
         asset_assessment_id = record_data.get("asset_assessment")
         point_in_time = record_data.get("point_in_time")
         if not asset_assessment_id or point_in_time is None:
@@ -1886,9 +2639,33 @@ class LoadFileView(APIView):
                                 .process_records(records)
                                 .to_dict()
                             )
+                        case ModelType.VULNERABILITY:
+                            res = (
+                                VulnerabilityRecordConsumer(base_context)
+                                .process_records(records)
+                                .to_dict()
+                            )
                         case ModelType.BUSINESS_IMPACT_ANALYSIS:
                             res = (
                                 BusinessImpactAnalysisRecordConsumer(base_context)
+                                .process_records(records)
+                                .to_dict()
+                            )
+                        case ModelType.FOLDER:
+                            res = (
+                                FolderRecordConsumer(base_context)
+                                .process_records(records)
+                                .to_dict()
+                            )
+                        case ModelType.ELEMENTARY_ACTION:
+                            res = (
+                                ElementaryActionRecordConsumer(base_context)
+                                .process_records(records)
+                                .to_dict()
+                            )
+                        case ModelType.PROCESSING:
+                            res = (
+                                ProcessingRecordConsumer(base_context)
                                 .process_records(records)
                                 .to_dict()
                             )
@@ -1925,8 +2702,6 @@ class LoadFileView(APIView):
         framework_id,
         matrix_id=None,
     ):
-        folders_map = get_accessible_folders_map(request.user)
-
         # Dispatch to appropriate handler
         match model_type:
             case ModelType.COMPLIANCE_ASSESSMENT:
@@ -1937,16 +2712,6 @@ class LoadFileView(APIView):
                 return self._process_risk_assessment(
                     request, records, folder_id, perimeter_id, matrix_id
                 )
-            case ModelType.ELEMENTARY_ACTION:
-                return self._process_elementary_actions(
-                    request, records, folders_map, folder_id
-                )
-            case ModelType.PROCESSING:
-                return self._process_processings(
-                    request, records, folders_map, folder_id
-                )
-            case ModelType.FOLDER:
-                return self._process_folders(request, records)
             case _:
                 return {
                     "successful": 0,
@@ -1954,301 +2719,26 @@ class LoadFileView(APIView):
                     "errors": [{"error": f"Unknown model type: {model_type}"}],
                 }
 
-    def _process_elementary_actions(self, request, records, folders_map, folder_id):
-        """Process elementary actions import from Excel"""
-        results = {"successful": 0, "failed": 0, "errors": []}
-
-        # Define attack stage mapping (supports English and French)
-        ATTACK_STAGE_MAP = {
-            # English
-            "know": 0,
-            "reconnaissance": 0,
-            "ebiosreconnaissance": 0,
-            "enter": 1,
-            "initial access": 1,
-            "ebiosinitialaccess": 1,
-            "discover": 2,
-            "discovery": 2,
-            "ebiosdiscovery": 2,
-            "exploit": 3,
-            "exploitation": 3,
-            "ebiosexploitation": 3,
-            # French
-            "connaitre": 0,
-            "connaître": 0,
-            "pénétrer": 1,
-            "penetrer": 1,
-            "entrer": 1,
-            "trouver": 2,
-            "découvrir": 2,
-            "decouvrir": 2,
-            "exploiter": 3,
-        }
-
-        # Define icon mapping
-        ICON_MAP = {
-            icon.lower(): icon
-            for icon in [
-                "server",
-                "computer",
-                "cloud",
-                "file",
-                "diamond",
-                "phone",
-                "cube",
-                "blocks",
-                "shapes",
-                "network",
-                "database",
-                "key",
-                "search",
-                "carrot",
-                "money",
-                "skull",
-                "globe",
-                "usb",
-            ]
-        }
-
-        for record in records:
-            # Get domain from record or use fallback
-            domain = folder_id
-            if record.get("domain") != "":
-                domain = folders_map.get(str(record.get("domain")).lower(), folder_id)
-
-            # Check if name is provided as it's mandatory
-            if not record.get("name"):
-                results["failed"] += 1
-                results["errors"].append(
-                    {"record": record, "error": "Name field is mandatory"}
-                )
-                continue
-
-            # Map attack stage
-            attack_stage = 0  # Default to "Know"
-            if record.get("attack_stage", ""):
-                attack_stage_value = str(record.get("attack_stage")).strip().lower()
-                attack_stage = ATTACK_STAGE_MAP.get(attack_stage_value, 0)
-
-            # Map icon
-            icon = None
-            if record.get("icon", ""):
-                icon_value = str(record.get("icon")).strip().lower()
-                icon = ICON_MAP.get(icon_value)
-
-            # Prepare data for serializer
-            elementary_action_data = {
-                "name": record.get("name"),  # Name is mandatory
-                "description": record.get("description", ""),
-                "ref_id": record.get("ref_id", ""),
-                "folder": domain,
-                "attack_stage": attack_stage,
-            }
-
-            # Add icon if valid
-            if icon:
-                elementary_action_data["icon"] = icon
-
-            # Use the serializer for validation and saving
-            serializer = ElementaryActionWriteSerializer(
-                data=elementary_action_data, context={"request": request}
-            )
-            try:
-                if serializer.is_valid(raise_exception=True):
-                    serializer.save()
-                    results["successful"] += 1
-                else:
-                    results["failed"] += 1
-                    results["errors"].append(
-                        {"record": record, "errors": serializer.errors}
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"Error creating elementary action {record.get('name')}: {str(e)}"
-                )
-                results["failed"] += 1
-                results["errors"].append({"record": record, "error": str(e)})
-
-        logger.info(
-            f"Elementary Action import complete. Success: {results['successful']}, Failed: {results['failed']}"
-        )
-        return results
-
-    def _process_processings(self, request, records, folders_map, folder_id):
-        results = {"successful": 0, "failed": 0, "errors": []}
-
-        # Create reverse mapping: display value -> database value
-        status_mapping = {v: k for k, v in Processing.STATUS_CHOICES}
-
-        for record in records:
-            domain_id = folder_id
-
-            if record.get("domain") != "":
-                domain_id = folders_map.get(
-                    str(record.get("domain")).lower(), folder_id
-                )
-
-            if not record.get("name"):
-                results["failed"] += 1
-                results["errors"].append(
-                    {"record": record, "error": "Name field is mandatory"}
-                )
-                continue
-
-            status_value = record.get("status", "privacy_draft")
-            if status_value in status_mapping:
-                status_value = status_mapping[status_value]
-
-            processing_data = {
-                "name": record.get("name"),
-                "description": record.get("description", ""),
-                "ref_id": record.get("ref_id", ""),
-                "folder": domain_id,
-                "status": status_value,
-                "dpia_required": record.get("dpia_required", False),
-                "dpia_reference": record.get("dpia_reference", ""),
-            }
-
-            serializer = ProcessingWriteSerializer(
-                data=processing_data, context={"request": request}
-            )
-            try:
-                if serializer.is_valid(raise_exception=True):
-                    processing_instance = serializer.save()
-
-                    if record.get("processing_nature"):
-                        nature_names = [
-                            n.strip()
-                            for n in str(record.get("processing_nature")).split(",")
-                            if n.strip()
-                        ]
-                        nature_objects = ProcessingNature.objects.filter(
-                            name__in=nature_names
-                        )
-                        processing_instance.nature.set(nature_objects)
-
-                    if record.get("assigned_to"):
-                        user_emails = [
-                            e.strip()
-                            for e in str(record.get("assigned_to")).split(",")
-                            if e.strip()
-                        ]
-                        user_objects = User.objects.filter(email__in=user_emails)
-                        processing_instance.assigned_to.set(user_objects)
-
-                    if record.get("labels"):
-                        label_names = [
-                            label.strip()
-                            for label in str(record.get("labels")).split(",")
-                            if label.strip()
-                        ]
-                        label_objects = FilteringLabel.objects.filter(
-                            label__in=label_names
-                        )
-                        processing_instance.filtering_labels.set(label_objects)
-
-                    results["successful"] += 1
-                else:
-                    results["failed"] += 1
-                    results["errors"].append(
-                        {"record": record, "errors": serializer.errors}
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"Error creating processing {record.get('name')}: {str(e)}"
-                )
-                results["failed"] += 1
-                results["errors"].append({"record": record, "error": str(e)})
-        logger.info(
-            f"Processing import complete. Success: {results['successful']}, Failed: {results['failed']}"
-        )
-        return results
-
-    def _process_folders(self, request, records):
-        """Process folders (domains) import from Excel"""
-        results = {"successful": 0, "failed": 0, "errors": []}
-
-        # Get the global (root) folder as the default parent
-        global_folder = Folder.get_root_folder()
-
-        for record in records:
-            # Check if name is provided as it's mandatory
-            if not record.get("name"):
-                results["failed"] += 1
-                results["errors"].append(
-                    {"record": record, "error": "Name field is mandatory"}
-                )
-                continue
-
-            # Handle parent folder lookup
-            parent_folder_id = global_folder.id  # Default to global folder
-            parent_folder_name = record.get("domain", "").strip()
-
-            if parent_folder_name:
-                # Try to find the parent folder by name
-                try:
-                    parent_folder = Folder.objects.get(name__iexact=parent_folder_name)
-                    parent_folder_id = parent_folder.id
-                except Folder.DoesNotExist:
-                    results["failed"] += 1
-                    results["errors"].append(
-                        {
-                            "record": record,
-                            "error": f"Parent folder '{parent_folder_name}' not found",
-                        }
-                    )
-                    continue
-                except Folder.MultipleObjectsReturned:
-                    results["failed"] += 1
-                    results["errors"].append(
-                        {
-                            "record": record,
-                            "error": f"Multiple folders found with name '{parent_folder_name}'",
-                        }
-                    )
-                    continue
-
-            # Prepare data for serializer
-            folder_data = {
-                "name": record.get("name"),  # Name is mandatory
-                "description": record.get("description", ""),
-                "parent_folder": parent_folder_id,
-            }
-
-            # Use the serializer for validation and saving
-            serializer = FolderWriteSerializer(
-                data=folder_data, context={"request": request}
-            )
-            try:
-                if serializer.is_valid(raise_exception=True):
-                    serializer.save()
-                    results["successful"] += 1
-                else:
-                    results["failed"] += 1
-                    results["errors"].append(
-                        {"record": record, "errors": serializer.errors}
-                    )
-            except Exception as e:
-                logger.warning(f"Error creating folder {record.get('name')}: {str(e)}")
-                results["failed"] += 1
-                results["errors"].append({"record": record, "error": str(e)})
-
-        logger.info(
-            f"Folder import complete. Success: {results['successful']}, Failed: {results['failed']}"
-        )
-        return results
-
     def _process_compliance_assessment(
         self, request, records, folder_id, perimeter_id, framework_id
     ):
         results = {"successful": 0, "failed": 0, "errors": []}
         try:
             # Get the perimeter object to extract its folder ID
-            perimeter = Perimeter.objects.get(id=perimeter_id)
-            folder_id = perimeter.folder.id
+            perimeter = None
+            if perimeter_id is not None:
+                perimeter = Perimeter.objects.get(id=perimeter_id)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            assessment_name = f"Assessment_{timestamp}"
+            if perimeter is not None:
+                folder_id = perimeter.folder.id
+            elif folder_id is None:
+                results["failed"] += 1
+                results["errors"].append(
+                    {"error": "A folder must be specified when there's no perimeter!"}
+                )
+                return results
+
+            assessment_name = resolve_container_name(request, "Assessment")
 
             # Prepare data for serializer
             assessment_data = {
@@ -2360,13 +2850,12 @@ class LoadFileView(APIView):
 
                             # Build answers from the "answers" cell
                             answers_cell = record.get("answers")
-                            if (
-                                answers_cell not in (None, "")
-                                and ReqNode
-                                and ReqNode.questions
-                            ):
+                            questions_dict = (
+                                build_questions_dict(ReqNode) if ReqNode else None
+                            )
+                            if answers_cell not in (None, "") and questions_dict:
                                 text_to_question = {}
-                                for q_urn, qdef in ReqNode.questions.items():
+                                for q_urn, qdef in questions_dict.items():
                                     q_text = qdef.get("text", "")
                                     if q_text:
                                         text_to_question[q_text] = (
@@ -2374,7 +2863,7 @@ class LoadFileView(APIView):
                                             qdef,
                                         )
 
-                                answers = requirement_assessment.answers or {}
+                                answers = {}
                                 has_any_answer = False
 
                                 for line in str(answers_cell).split("\n"):
@@ -2444,11 +2933,15 @@ class LoadFileView(APIView):
                                     enable_doc_score
                                     and not compliance_assessment.show_documentation_score
                                 ):
+                                    # show_documentation_score is a @property
+                                    # backed by `field_visibility`; the setter
+                                    # mutates that JSON column, so update_fields
+                                    # must point at the actual concrete field.
                                     compliance_assessment.show_documentation_score = (
                                         True
                                     )
                                     compliance_assessment.save(
-                                        update_fields=["show_documentation_score"]
+                                        update_fields=["field_visibility"]
                                     )
                                 results["successful"] += 1
                             else:
@@ -3188,15 +3681,36 @@ class LoadFileView(APIView):
                     "folder": domain,
                 }
 
-                # Add optional solution reference
-                solution_ref_id = str(record.get("solution_ref_id", "")).strip()
-                if solution_ref_id:
-                    if solution_ref_id in solution_ref_map:
-                        contract_data["solution"] = solution_ref_map[solution_ref_id]
-                    else:
-                        logger.warning(
-                            f"Solution with ref_id '{solution_ref_id}' not found for contract '{ref_id}'"
-                        )
+                # Parse solution references (newline, pipe, or comma-separated).
+                # Unknown refs are reported in results["errors"] but do not block
+                # contract creation — known refs are still linked, matching the
+                # pre-multi-solution lenient behavior.
+                solution_ids = []
+                missing_solution_refs = []
+                solution_ref_id_raw = str(record.get("solution_ref_id", "")).strip()
+                if solution_ref_id_raw:
+                    for sol_ref in re.split(r"[\n\r|,]+", solution_ref_id_raw):
+                        sol_ref = sol_ref.strip()
+                        if not sol_ref:
+                            continue
+                        if sol_ref in solution_ref_map:
+                            solution_ids.append(solution_ref_map[sol_ref])
+                        else:
+                            missing_solution_refs.append(sol_ref)
+                            logger.warning(
+                                f"Solution with ref_id '{sol_ref}' not found for contract '{ref_id}'"
+                            )
+
+                if missing_solution_refs:
+                    results["errors"].append(
+                        {
+                            "record": record,
+                            "error": (
+                                "Unknown solution_ref_id(s) skipped: "
+                                + ", ".join(missing_solution_refs)
+                            ),
+                        }
+                    )
 
                 # Add optional fields
                 if record.get("status"):
@@ -3251,7 +3765,9 @@ class LoadFileView(APIView):
                                 context={"request": request},
                             )
                             if serializer.is_valid():
-                                serializer.save()
+                                contract = serializer.save()
+                                if solution_ids:
+                                    contract.solutions.set(solution_ids)
                                 results["updated"] += 1
                             else:
                                 results["failed"] += 1
@@ -3267,6 +3783,8 @@ class LoadFileView(APIView):
 
                 if serializer.is_valid(raise_exception=True):
                     contract = serializer.save()
+                    if solution_ids:
+                        contract.solutions.set(solution_ids)
                     results["successful"] += 1
                     logger.debug(
                         f"Created contract: {contract.name} with ref_id: {ref_id}"
@@ -3327,14 +3845,29 @@ class LoadFileView(APIView):
 
         try:
             # Get the perimeter and its domain
-            perimeter = Perimeter.objects.get(id=perimeter_id)
-            domain = perimeter.folder
+            perimeter = None
+            if perimeter_id is not None:
+                perimeter = Perimeter.objects.get(id=perimeter_id)
+
+            if perimeter is not None:
+                domain = perimeter.folder
+            else:
+                if folder_id is None:
+                    results["failed"] += 1
+                    results["errors"].append(
+                        {
+                            "error": "A folder must be specified when there's no perimeter!"
+                        }
+                    )
+                    return results
+                else:
+                    domain = Folder.objects.get(id=folder_id)
 
             # Get the risk matrix
             risk_matrix = RiskMatrix.objects.get(id=matrix_id)
 
+            assessment_name = resolve_container_name(request, "Risk_Assessment")
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            assessment_name = f"Risk_Assessment_{timestamp}"
 
             # Create the risk assessment
             assessment_data = {
@@ -3370,26 +3903,25 @@ class LoadFileView(APIView):
             matrix_mappings = self._build_matrix_mappings(risk_matrix)
 
             # Process controls first - collect all unique control names
+            # Accept both the legacy columns name and the model fields name for the
             all_controls = set()
             for record in records:
-                existing_controls = record.get("existing_applied_controls", "").strip()
-                additional_controls = record.get("additional_controls", "").strip()
+                existing_controls = (
+                    record.get("existing_applied_controls")
+                    or record.get("existing_controls")
+                    or ""
+                ).strip()
+                additional_controls = (
+                    record.get("additional_controls")
+                    or record.get("applied_controls")
+                    or ""
+                ).strip()
 
                 if existing_controls:
-                    all_controls.update(
-                        [
-                            ctrl.strip()
-                            for ctrl in existing_controls.split("\n")
-                            if ctrl.strip()
-                        ]
-                    )
+                    all_controls.update(self._split_multi_separator(existing_controls))
                 if additional_controls:
                     all_controls.update(
-                        [
-                            ctrl.strip()
-                            for ctrl in additional_controls.split("\n")
-                            if ctrl.strip()
-                        ]
+                        self._split_multi_separator(additional_controls)
                     )
 
             # Create or find controls in the domain
@@ -3406,6 +3938,7 @@ class LoadFileView(APIView):
                         matrix_mappings,
                         control_mapping,
                         request,
+                        domain,
                     )
                     if scenario_data:
                         results["successful"] += 1
@@ -3548,7 +4081,13 @@ class LoadFileView(APIView):
         return control_mapping
 
     def _process_risk_scenario_record(
-        self, record, risk_assessment, matrix_mappings, control_mapping, request
+        self,
+        record,
+        risk_assessment,
+        matrix_mappings,
+        control_mapping,
+        request,
+        domain,
     ):
         """Process a single risk scenario record"""
         try:
@@ -3560,26 +4099,35 @@ class LoadFileView(APIView):
             if not name:
                 raise ValueError("Risk scenario name is required")
 
-            # Map risk values using matrix mappings
+            # Map risk values using matrix mappings. Accept both the short form
+            # (`*_proba`, used historically) and the long form (`*_probability`,
+            # used by the CSV/XLSX export) so that exported files round-trip cleanly.
             inherent_impact = self._map_risk_value(
                 record.get("inherent_impact", ""), matrix_mappings["impact"]
             )
             inherent_proba = self._map_risk_value(
-                record.get("inherent_proba", ""), matrix_mappings["probability"]
+                record.get("inherent_proba")
+                or record.get("inherent_probability")
+                or "",
+                matrix_mappings["probability"],
             )
 
             current_impact = self._map_risk_value(
                 record.get("current_impact", ""), matrix_mappings["impact"]
             )
             current_proba = self._map_risk_value(
-                record.get("current_proba", ""), matrix_mappings["probability"]
+                record.get("current_proba") or record.get("current_probability") or "",
+                matrix_mappings["probability"],
             )
 
             residual_impact = self._map_risk_value(
                 record.get("residual_impact", ""), matrix_mappings["impact"]
             )
             residual_proba = self._map_risk_value(
-                record.get("residual_proba", ""), matrix_mappings["probability"]
+                record.get("residual_proba")
+                or record.get("residual_probability")
+                or "",
+                matrix_mappings["probability"],
             )
 
             logger.debug(
@@ -3611,6 +4159,7 @@ class LoadFileView(APIView):
                     ),
                     "open",
                 ),
+                "justification": record.get("justification", "") or "",
             }
 
             # Create the risk scenario
@@ -3645,12 +4194,21 @@ class LoadFileView(APIView):
                 "existing_applied_controls",
             )
 
-            # Link additional controls
+            # Link additional controls. Accept both the legacy column name
+            # (`additional_controls`) and the model field name (`applied_controls`,
+            # used by the CSV/XLSX export) for round-trip compatibility.
             self._link_controls_to_scenario(
                 risk_scenario,
-                record.get("additional_controls", ""),
+                record.get("additional_controls")
+                or record.get("applied_controls")
+                or "",
                 control_mapping,
                 "applied_controls",
+            )
+
+            # Link assets (must already exist in the domain folder)
+            self._link_assets_to_scenario(
+                risk_scenario, record.get("assets", ""), domain
             )
 
             return risk_scenario
@@ -3683,6 +4241,13 @@ class LoadFileView(APIView):
         )
         return -1
 
+    @staticmethod
+    def _split_multi_separator(text: str) -> list[str]:
+        """Split a string on newline, pipe, semicolon or comma and return trimmed, non-empty items."""
+        if not text:
+            return []
+        return [item.strip() for item in re.split(r"[\n|;,]", text) if item.strip()]
+
     def _link_controls_to_scenario(
         self, risk_scenario, controls_text, control_mapping, field_name
     ):
@@ -3690,9 +4255,7 @@ class LoadFileView(APIView):
         if not controls_text:
             return
 
-        control_names = [
-            ctrl.strip() for ctrl in controls_text.split("\n") if ctrl.strip()
-        ]
+        control_names = self._split_multi_separator(controls_text)
         control_ids = []
 
         for control_name in control_names:
@@ -3703,6 +4266,38 @@ class LoadFileView(APIView):
             # Get the field and set the many-to-many relationship
             field = getattr(risk_scenario, field_name)
             field.set(control_ids)
+
+    def _link_assets_to_scenario(self, risk_scenario, assets_text, domain):
+        """Link assets to a risk scenario based on asset names.
+
+        Assets are looked up by name within the domain folder. Missing assets are
+        created with the model's default type (SUPPORT); users can re-classify
+        them afterward from the UI.
+        """
+        if not assets_text:
+            return
+
+        asset_names = self._split_multi_separator(assets_text)
+        asset_ids = []
+
+        for asset_name in asset_names:
+            try:
+                asset, created = Asset.objects.get_or_create(
+                    name=asset_name, folder=domain
+                )
+                if created:
+                    logger.info(
+                        f"Created asset '{asset_name}' in domain '{domain.name}' "
+                        f"with default type '{asset.get_type_display()}'"
+                    )
+                asset_ids.append(asset.id)
+            except Exception:
+                logger.exception(
+                    f"Failed to resolve asset '{asset_name}' in domain '{domain.name}'"
+                )
+
+        if asset_ids:
+            risk_scenario.assets.set(asset_ids)
 
     def _process_ebios_rm_study_arm(
         self,
@@ -3752,8 +4347,7 @@ class LoadFileView(APIView):
             arm_data = process_arm_file(excel_file.read())
 
             # Generate study name
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            study_name = f"EBIOS_RM_Study_{timestamp}"
+            study_name = resolve_container_name(request, "EBIOS_RM_Study")
 
             # Use missions as description
             study_description = arm_data.get("study_description", "")
@@ -4996,9 +5590,11 @@ class LoadFileView(APIView):
             data = process_ebios_rm_excel(excel_file.read())
             study_data = data.get("study", {})
 
-            # Create the study
+            # Create the study. Header override wins over the value parsed
+            # from the Excel file, which in turn wins over the generic fallback.
+            override_name = (request.headers.get("X-Name") or "").strip()
             study_payload = {
-                "name": study_data.get("name") or f"Imported Study",
+                "name": override_name or study_data.get("name") or "Imported Study",
                 "description": study_data.get("description", ""),
                 "ref_id": study_data.get("ref_id", ""),
                 "version": study_data.get("version", ""),

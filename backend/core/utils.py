@@ -1,4 +1,5 @@
 import hashlib
+from decimal import Decimal
 from enum import Enum
 
 import json
@@ -16,6 +17,97 @@ from dateutil import relativedelta as rd
 from uuid import UUID
 
 logger = structlog.get_logger(__name__)
+
+
+def extract_node_id(urn: str | None) -> str | None:
+    """Extract the node_id (mobile part) from a URN.
+
+    URN format: urn:{org}:risk:{type}:{slug}:{node_id}
+    The node_id is everything after the 5th colon and may contain colons.
+    """
+    if not urn:
+        return None
+    parts = urn.split(":")
+    if len(parts) <= 5:
+        return None
+    node_id = ":".join(parts[5:]).strip()
+    return node_id if node_id else None
+
+
+def is_compute_result_truthy(compute_result: str | None) -> bool:
+    """Return True if a QuestionChoice.compute_result value is truthy."""
+    return compute_result is not None and compute_result not in ("false", "0", "")
+
+
+# Currency formatting conventions: (position, space)
+# position: "before" or "after" the amount
+# space: whether to include a space between symbol and amount
+_CURRENCY_FORMAT = {
+    # Symbol before, no space: $100
+    "$": ("before", False),
+    "£": ("before", False),
+    "¥": ("before", False),
+    "CN¥": ("before", False),
+    "₹": ("before", False),
+    "₩": ("before", False),
+    "A$": ("before", False),
+    "NZ$": ("before", False),
+    "S$": ("before", False),
+    "₺": ("before", False),
+    "NT$": ("before", False),
+    "฿": ("before", False),
+    "MYR": ("before", False),
+    # Symbol before, with space: CHF 100
+    "C$": ("before", True),
+    "CHF": ("before", True),
+    "HK$": ("before", True),
+    "R$": ("before", True),
+    "MX$": ("before", True),
+    "ZAR": ("before", True),
+    # Symbol after, with space: 100 €
+    "€": ("after", True),
+    "SEK": ("after", True),
+    "NOK": ("after", True),
+    "DKK": ("after", True),
+    "PLN": ("after", True),
+}
+
+
+def get_global_currency() -> str:
+    """Get the currency from global settings, defaulting to €."""
+    from global_settings.models import GlobalSettings
+
+    general_settings = GlobalSettings.objects.filter(name="general").first()
+    return general_settings.value.get("currency", "€") if general_settings else "€"
+
+
+def format_currency(value, currency: str) -> str:
+    """Format a numeric value with its currency symbol in the correct position.
+
+    Respects per-currency conventions for symbol position (before/after)
+    and spacing. For large values, uses abbreviated forms (K, M, B).
+    """
+    if not currency:
+        return f"{value} *"
+
+    if isinstance(value, (int, float, Decimal)):
+        if value >= 1_000_000_000:
+            formatted = f"{value / 1_000_000_000:.1f}B"
+        elif value >= 1_000_000:
+            formatted = f"{value / 1_000_000:.1f}M"
+        elif value >= 1_000:
+            formatted = f"{value / 1_000:.0f}K"
+        else:
+            formatted = f"{value:,.0f}"
+    else:
+        formatted = str(value)
+
+    position, space = _CURRENCY_FORMAT.get(currency, ("before", True))
+    sep = " " if space else ""
+
+    if position == "after":
+        return f"{formatted}{sep}{currency}"
+    return f"{currency}{sep}{formatted}"
 
 
 def sizeof_json(obj) -> int:
@@ -682,62 +774,237 @@ def _generate_occurrences(template, start_date, end_date):
     return occurrences
 
 
-def _is_question_visible(question, answers):
-    """Check if a question is visible based on depends_on logic."""
-    depends_on = question.get("depends_on")
+def _is_question_visible(question, answers_by_urn, questions_by_urn=None, visited=None):
+    """Check if a question is visible based on depends_on logic.
+
+    Works with Question model objects (new relational models).
+    - question: a Question model instance
+    - answers_by_urn: dict of {question.urn: answer_value}
+    - questions_by_urn: dict of {question.urn: Question} (optional, for lookups)
+    - visited: set of urns already visited (cycle protection)
+    """
+    depends_on = (
+        question.depends_on
+        if hasattr(question, "depends_on")
+        else question.get("depends_on")
+        if isinstance(question, dict)
+        else None
+    )
     if not depends_on:
         return True
 
-    target_answer = answers.get(depends_on["question"])
-    if not target_answer:
+    dep_ref = depends_on.get("question") if isinstance(depends_on, dict) else None
+    if not dep_ref:
+        return True
+
+    # Cycle protection
+    if visited is None:
+        visited = set()
+    q_urn = getattr(question, "urn", None) or (
+        question.get("urn") if isinstance(question, dict) else None
+    )
+    if q_urn:
+        if q_urn in visited:
+            return True
+        visited = visited | {q_urn}
+
+    # Check parent question visibility first (recursive chain)
+    if questions_by_urn:
+        parent_question = questions_by_urn.get(dep_ref)
+        if parent_question and not _is_question_visible(
+            parent_question, answers_by_urn, questions_by_urn, visited
+        ):
+            return False
+
+    target_answer = answers_by_urn.get(dep_ref)
+    # Use explicit None/empty-list check to avoid hiding on falsy values like 0 or False
+    if target_answer is None or (isinstance(target_answer, list) and not target_answer):
         return False
 
-    if depends_on["condition"] == "any":
-        if isinstance(target_answer, list):
-            return any(a in depends_on["answers"] for a in target_answer)
-        return target_answer in depends_on["answers"]
+    condition = depends_on.get("condition", "any")
+    dep_answers = depends_on.get("answers", [])
 
-    if depends_on["condition"] == "all":
+    if condition == "any":
         if isinstance(target_answer, list):
-            return all(a in target_answer for a in depends_on["answers"])
-        return target_answer == depends_on["answers"][0]
+            return any(a in dep_answers for a in target_answer)
+        return target_answer in dep_answers
+
+    if condition == "all":
+        if isinstance(target_answer, list):
+            return all(a in target_answer for a in dep_answers)
+        # Single-value answer can only satisfy "all" if there's exactly one expected answer
+        return len(dep_answers) == 1 and target_answer == dep_answers[0]
 
     return True
 
 
+def build_answers_dict(answers_qs):
+    """Build {question.urn: answer_value} dict from Answer queryset for backward compat.
+
+    For choice-type questions, returns ref_id strings (single choice) or lists
+    of ref_id strings (multiple choice). For other types, returns the raw value.
+    """
+    from core.models import Question
+
+    result = {}
+    for a in answers_qs:
+        if a.question.type == Question.Type.UNIQUE_CHOICE:
+            refs = [c.urn for c in a.selected_choices.all()]
+            result[a.question.urn] = refs[0] if refs else None
+        elif a.question.type == Question.Type.MULTIPLE_CHOICE:
+            result[a.question.urn] = [c.urn for c in a.selected_choices.all()]
+        else:
+            result[a.question.urn] = a.value
+    return result
+
+
+def _build_answer_context(questions_qs, answers_qs):
+    """Build lookup dicts used for question visibility and score computation.
+
+    Returns (selected_choice_pks_by_qid, answers_by_urn, questions_by_urn, has_answer_by_qid).
+    """
+    from core.models import Question
+
+    selected_choice_pks_by_qid = {}
+    answers_by_urn = {}
+    questions_by_urn = {}
+    has_answer_by_qid = {}
+
+    for a in answers_qs:
+        q_type = a.question.type
+        if q_type in (
+            Question.Type.UNIQUE_CHOICE,
+            Question.Type.MULTIPLE_CHOICE,
+        ):
+            pks = {c.id for c in a.selected_choices.all()}
+            selected_choice_pks_by_qid[a.question_id] = pks
+            has_answer_by_qid[a.question_id] = len(pks) > 0
+        else:
+            has_answer_by_qid[a.question_id] = a.value is not None and a.value != ""
+
+        if a.question.urn:
+            answers_by_urn[a.question.urn] = a.get_choice_urns() or a.value
+
+    for q in questions_qs:
+        questions_by_urn[q.urn] = q
+
+    return (
+        selected_choice_pks_by_qid,
+        answers_by_urn,
+        questions_by_urn,
+        has_answer_by_qid,
+    )
+
+
 def update_selected_implementation_groups(compliance_assessment):
     """Recalculate selected IGs based on all visible answers in the assessment."""
+    from core.models import Answer, Question
+
     igs_to_select = set()
 
     requirement_assessments = (
         compliance_assessment.requirement_assessments.select_related(
             "requirement", "requirement__framework"
-        ).all()
+        )
+        .prefetch_related(
+            "answers",
+            "answers__question",
+            "answers__selected_choices",
+            "requirement__questions",
+            "requirement__questions__choices",
+        )
+        .all()
     )
+
     for ra in requirement_assessments:
-        answers = ra.answers or {}
-        if not ra.requirement.questions:
+        questions_qs = ra.requirement.questions.all()
+        if not questions_qs:
             continue
-        for question_urn, question in ra.requirement.questions.items():
-            if not _is_question_visible(question, answers):
+
+        answers_qs = ra.answers.all()
+        (
+            selected_choice_pks_by_qid,
+            answers_by_urn,
+            questions_by_urn,
+            has_answer_by_qid,
+        ) = _build_answer_context(questions_qs, answers_qs)
+
+        for question in questions_qs:
+            if not _is_question_visible(question, answers_by_urn, questions_by_urn):
                 continue
 
-            question_answers = answers.get(question_urn)
-            if not question_answers:
+            if not has_answer_by_qid.get(question.id):
                 continue
-            if not isinstance(question_answers, list):
-                question_answers = [question_answers]
 
-            for choice in question.get("choices", []):
-                if choice["urn"] in question_answers:
-                    igs_to_select.update(choice.get("select_implementation_groups", []))
+            selected_pks = selected_choice_pks_by_qid.get(question.id, set())
+            for choice in question.choices.all():
+                if choice.id in selected_pks:
+                    igs_to_select.update(choice.select_implementation_groups or [])
 
-        for ig in ra.requirement.framework.implementation_groups_definition:
-            if ig.get("default_selected"):
-                igs_to_select.add(ig["ref_id"])
+        if ra.requirement.framework.implementation_groups_definition:
+            for ig in ra.requirement.framework.implementation_groups_definition:
+                if ig.get("default_selected"):
+                    igs_to_select.add(ig["ref_id"])
 
     compliance_assessment.selected_implementation_groups = list(igs_to_select)
     compliance_assessment.save(update_fields=["selected_implementation_groups"])
+
+
+def build_questions_dict(node):
+    """Reconstruct the JSON-format questions dict from relational Question/QuestionChoice models.
+
+    Returns a dict like {urn: {type, text, choices, ...}} or None for unsaved objects
+    or nodes with no questions.
+    """
+    if node.pk is None:
+        return None
+
+    from core.models import Question
+
+    questions_qs = node.questions.all()
+
+    if not questions_qs:
+        return None
+
+    result = {}
+    for question in questions_qs:
+        choices = []
+        for choice in question.choices.all():
+            choice_data = {
+                "urn": choice.urn,
+                "value": choice.value or "",
+            }
+            if choice.add_score is not None:
+                choice_data["add_score"] = choice.add_score
+            if choice.compute_result is not None:
+                choice_data["compute_result"] = is_compute_result_truthy(
+                    choice.compute_result
+                )
+            if choice.description:
+                choice_data["description"] = choice.description
+            if choice.color:
+                choice_data["color"] = choice.color
+            if choice.select_implementation_groups:
+                choice_data["select_implementation_groups"] = (
+                    choice.select_implementation_groups
+                )
+            if choice.annotation:
+                choice_data["annotation"] = choice.annotation
+            choices.append(choice_data)
+
+        q_data = {
+            "type": question.type,
+            "text": question.text or "",
+        }
+        if question.annotation:
+            q_data["annotation"] = question.annotation
+        if choices:
+            q_data["choices"] = choices
+        if question.depends_on:
+            q_data["depends_on"] = question.depends_on
+        result[question.urn] = q_data
+
+    return result if result else None
 
 
 def _resolve_auditee_role_ids():
@@ -756,6 +1023,65 @@ def _resolve_auditee_role_ids():
         if rc.value in role_id_by_name
     )
     return auditee_id, higher_ids
+
+
+def _resolve_respondent_role_ids():
+    """Resolve role IDs for respondent roles (auditee + third-party respondent) + higher roles."""
+    from iam.cache_builders import get_roles_state
+
+    role_id_by_name = get_roles_state().role_id_by_name
+    respondent_ids = frozenset(
+        role_id_by_name[rc.value]
+        for rc in (RoleCodename.AUDITEE, RoleCodename.THIRD_PARTY_RESPONDENT)
+        if rc.value in role_id_by_name
+    )
+    higher_ids = frozenset(
+        role_id_by_name[rc.value]
+        for rc in (
+            RoleCodename.ANALYST,
+            RoleCodename.DOMAIN_MANAGER,
+            RoleCodename.ADMINISTRATOR,
+        )
+        if rc.value in role_id_by_name
+    )
+    return respondent_ids, higher_ids
+
+
+def get_respondent_filtered_folder_ids(user) -> set:
+    """Return folder IDs where *user* holds a respondent role (auditee or third-party
+    respondent) but NO higher role. Mirrors :func:`get_auditee_filtered_folder_ids`
+    but widens the role set so third-party respondents are also guarded.
+    """
+    from iam.models import _iter_assignment_lites_for_user
+    from iam.cache_builders import (
+        get_folder_state,
+        iter_descendant_ids,
+    )
+
+    respondent_role_ids, higher_role_ids = _resolve_respondent_role_ids()
+    if not respondent_role_ids:
+        return set()
+
+    state = get_folder_state()
+    folder_roles: dict[UUID, set] = {}
+
+    for a in _iter_assignment_lites_for_user(user):
+        role_id = a.role_id
+        if role_id not in respondent_role_ids and role_id not in higher_role_ids:
+            continue
+        for pf_id in a.perimeter_folder_ids:
+            if a.is_recursive:
+                target_ids = iter_descendant_ids(state, pf_id, include_start=True)
+            else:
+                target_ids = (pf_id,)
+            for fid in target_ids:
+                folder_roles.setdefault(fid, set()).add(role_id)
+
+    return {
+        fid
+        for fid, role_ids in folder_roles.items()
+        if role_ids & respondent_role_ids and role_ids.isdisjoint(higher_role_ids)
+    }
 
 
 def get_auditee_filtered_folder_ids(user) -> set:
@@ -804,3 +1130,97 @@ def get_auditee_filtered_folder_ids(user) -> set:
         for fid, role_ids in folder_roles.items()
         if auditee_role_id in role_ids and role_ids.isdisjoint(higher_role_ids)
     }
+
+
+# --- Field Visibility ---
+#
+# The compliance assessment's `field_visibility` is the single source of truth
+# at runtime. It is populated at CA creation from DEFAULT_VISIBILITY merged with
+# the framework's `field_visibility`, and can be edited per-CA from then on.
+#
+# Storage shape: {field_name: {role: 'edit'|'read'|'hidden'}}
+# Roles known today: 'auditor', 'respondent'. Future roles slot in alongside.
+# A missing field key, or a missing role within a field's pair, resolves to 'edit'
+# (matching the "no restriction" default).
+
+EVERYONE_EDIT = {"auditor": "edit", "respondent": "edit"}
+AUDITOR_ONLY = {"auditor": "edit", "respondent": "hidden"}
+AUDITOR_READ_ONLY = {"auditor": "read", "respondent": "hidden"}
+HIDDEN = {"auditor": "hidden", "respondent": "hidden"}
+
+DEFAULT_VISIBILITY = {
+    "score": HIDDEN,
+    "is_scored": HIDDEN,
+    "documentation_score": HIDDEN,
+    "status": AUDITOR_ONLY,
+    "extended_result": AUDITOR_ONLY,
+    # respondent_alignment is only ever populated by the respondent answering
+    # the auto-question. AUDITOR_ONLY would prevent that, so the auditor's
+    # badge would never render — functionally equivalent to HIDDEN. Default
+    # off; auditors who want it explicitly flip to "Auditor + Respondent".
+    "respondent_alignment": HIDDEN,
+}
+
+
+def resolve_visibility_from_overrides(overrides, field_name):
+    """Resolve a field's visibility pair from a raw `field_visibility` dict.
+
+    Shape: {role: 'edit'|'read'|'hidden'}.
+
+    Lookup order:
+      1. Explicit override in `overrides`.
+      2. DEFAULT_VISIBILITY (backstop in case a new field was added in code
+         without a migration to backfill existing CAs).
+      3. EVERYONE_EDIT (truly unknown field).
+
+    Use this when you have a raw dict (e.g. from a queryset `.values()` call).
+    For a model instance, prefer `resolve_field_visibility(ca, field)`.
+    """
+    pair = (overrides or {}).get(field_name)
+    if isinstance(pair, dict):
+        return pair
+    fallback = DEFAULT_VISIBILITY.get(field_name)
+    if isinstance(fallback, dict):
+        return dict(fallback)
+    return dict(EVERYONE_EDIT)
+
+
+def resolve_field_visibility(compliance_assessment, field_name):
+    """Return the per-role visibility pair for a field on a CA instance."""
+    overrides = getattr(compliance_assessment, "field_visibility", None) or {}
+    return resolve_visibility_from_overrides(overrides, field_name)
+
+
+def _role_access(compliance_assessment, field_name, role):
+    pair = resolve_field_visibility(compliance_assessment, field_name)
+    return pair.get(role, "edit")
+
+
+def is_field_visible_to(compliance_assessment, field_name, role):
+    """Whether a field is readable by the given role."""
+    return _role_access(compliance_assessment, field_name, role) != "hidden"
+
+
+def is_field_editable_by(compliance_assessment, field_name, role):
+    """Whether a field is writable by the given role."""
+    return _role_access(compliance_assessment, field_name, role) == "edit"
+
+
+def build_initial_field_visibility(framework):
+    """Build the initial `field_visibility` map for a new CA.
+
+    Layered per-role: code defaults are seeded for every known field, then the
+    framework's overrides are merged on top — but per-role, so a framework that
+    only specifies a single role (e.g. {"score": {"auditor": "edit"}}) does not
+    erase the default value for the other roles.
+    """
+    fw_overrides = getattr(framework, "field_visibility", None) or {}
+    merged = {key: dict(pair) for key, pair in DEFAULT_VISIBILITY.items()}
+    for key, pair in fw_overrides.items():
+        if not isinstance(pair, dict):
+            continue
+        # Ensure the field has a starting pair (DEFAULT_VISIBILITY may not
+        # cover every key the framework configures).
+        merged.setdefault(key, dict(EVERYONE_EDIT))
+        merged[key].update(pair)
+    return merged
