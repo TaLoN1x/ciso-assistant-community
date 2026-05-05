@@ -50,8 +50,8 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
   --mount=type=cache,target=/root/.cache/pip \
   uv sync --locked --no-dev \
-  && pip install torch --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps \
-  && pip uninstall -y cuda-bindings cuda-pathfinder cuda-toolkit \
+  && uv pip install torch --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps \
+  && uv pip uninstall cuda-bindings cuda-pathfinder cuda-toolkit \
   nvidia-cublas nvidia-cuda-cupti nvidia-cuda-nvrtc nvidia-cuda-runtime \
   nvidia-cudnn-cu13 nvidia-cufft nvidia-cufile nvidia-curand nvidia-cusolver \
   nvidia-cusparse nvidia-cusparselt-cu13 nvidia-nccl-cu13 nvidia-nvjitlink \
@@ -64,4 +64,4 @@ RUN groupadd -g 1001 app && useradd -u 1001 -g 1001 -m -s /bin/bash app
 # USER app  # not activated by default to keep compatibility
 
 EXPOSE 8000
-ENTRYPOINT ["bash", "startup.sh"]
+ENTRYPOINT ["uv", "run", "bash", "startup.sh"]
