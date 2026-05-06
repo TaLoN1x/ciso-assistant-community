@@ -899,6 +899,13 @@ class AppliedControlRecordConsumer(RecordConsumer[AppliedControlContext]):
         if isinstance(category, str):
             category = category.lower()
 
+
+        record_progress = record.get("progress_field")
+        if isinstance(record_progress, str) and record_progress.isdigit():
+            progress = int(record_progress)
+        else:
+            progress = 0
+
         data = {
             "ref_id": record.get("ref_id", ""),
             "name": name,
@@ -915,7 +922,7 @@ class AppliedControlRecordConsumer(RecordConsumer[AppliedControlContext]):
             "expiry_date": _parse_date(record.get("expiry_date")),
             "start_date": _parse_date(record.get("start_date")),
             "observation": record.get("observation", ""),
-            "progress_field": record.get("progress_field") or 0,
+            "progress_field": progress,
         }
 
         if reference_control_id:
