@@ -86,16 +86,19 @@ The Data Wizard defines the following `ModelType` enum for supported imports:
 | `filtering_labels` | No | Pipe- or comma-separated label names (created if missing) |
 | `observation` | No | Free text |
 | `progress_field` | No | Integer (0-100) |
+| `owner` | No | Semicolon-delimited list of user emails and/or team names. Resolved case-insensitively: first by user email, then by team name. Unresolved entries are skipped with a warning. |
 | `amortization_period` | No | Integer (1-50) |
 | `build_fixed_cost` | No | Integer |
 | `build_people_days` | No | Integer |
 | `run_fixed_cost` | No | Integer |
 | `run_people_days` | No | Integer |
 
+> **Note:** The `owner` field resolves entries against existing users (by email) and teams (by name). Ensure any referenced users and teams are created in CISO Assistant before importing. Unresolved entries will be skipped with a warning and will not block the import.
+
 **Missing Fields from Model:**
 | Field | Type | Priority |
 |-------|------|----------|
-| `owner` | M2M Actor | Medium |
+| `cost` | JSONField | Medium (complex structure) |
 | `evidences` | M2M | Medium |
 | `assets` | M2M | Medium |
 
