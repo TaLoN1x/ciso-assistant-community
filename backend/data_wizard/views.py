@@ -899,7 +899,6 @@ class AppliedControlRecordConsumer(RecordConsumer[AppliedControlContext]):
         if isinstance(category, str):
             category = category.lower()
 
-
         record_progress = record.get("progress_field")
         if isinstance(record_progress, str) and record_progress.isdigit():
             progress = int(record_progress)
