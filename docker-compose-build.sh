@@ -7,8 +7,8 @@ EXPECTED_OWNER="1001:1001"
 prepare_meta_file() {
   VERSION=$(git describe --tags --always)
   BUILD=$(git rev-parse --short HEAD)
-  echo "CISO_ASSISTANT_VERSION=${VERSION}" > .meta
-  echo "CISO_ASSISTANT_BUILD=${BUILD}" >> .meta
+  echo "CISO_ASSISTANT_VERSION=${VERSION}" >.meta
+  echo "CISO_ASSISTANT_BUILD=${BUILD}" >>.meta
   cp .meta ./backend/ciso_assistant/.meta
   cp .meta ./backend/.meta
 }
@@ -56,7 +56,18 @@ else
   docker compose -f "${DOCKER_COMPOSE_FILE}" up -d
 
   echo "Giving some time for the database to be ready, please wait ..."
-  sleep 50
+  for i in $(seq 1 60); do
+    if docker compose -f "${DOCKER_COMPOSE_FILE}" exec -T backend python manage.py migrate --check >/dev/null 2>&1; then
+      echo "Migrations complete."
+      break
+    fi
+    if [ "$i" -eq 60 ]; then
+      echo "Migrations did not complete within 600s. Recent backend logs:"
+      docker compose -f "${DOCKER_COMPOSE_FILE}" logs --tail=50 backend
+      exit 1
+    fi
+    sleep 10
+  done
 
   echo "Initialize your superuser account..."
   docker compose exec backend python manage.py createsuperuser
