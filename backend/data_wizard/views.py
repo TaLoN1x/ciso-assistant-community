@@ -900,10 +900,13 @@ class AppliedControlRecordConsumer(RecordConsumer[AppliedControlContext]):
             category = category.lower()
 
         record_progress = record.get("progress_field")
+        print(type(record_progress), record_progress)
+        progress = 0
+
         if isinstance(record_progress, str) and record_progress.isdigit():
             progress = int(record_progress)
-        else:
-            progress = 0
+        elif isinstance(record_progress, float):
+            progress = int(record_progress)
 
         data = {
             "ref_id": record.get("ref_id", ""),
