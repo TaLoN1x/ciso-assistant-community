@@ -85,6 +85,7 @@ The Data Wizard defines the following `ModelType` enum for supported imports:
 | `reference_control` | No | Lookup by ref_id (also accepts `reference_control_ref_id`) |
 | `filtering_labels` | No | Pipe- or comma-separated label names (created if missing) |
 | `observation` | No | Free text |
+| `progress_field` | No | Integer (0-100) |
 | `amortization_period` | No | Integer (1-50) |
 | `build_fixed_cost` | No | Integer |
 | `build_people_days` | No | Integer |

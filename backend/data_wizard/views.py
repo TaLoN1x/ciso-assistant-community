@@ -907,6 +907,7 @@ class AppliedControlRecordConsumer(RecordConsumer[AppliedControlContext]):
             "expiry_date": _parse_date(record.get("expiry_date")),
             "start_date": _parse_date(record.get("start_date")),
             "observation": record.get("observation", ""),
+            "progress_field": record.get("progress_field") or 0,
         }
 
         if reference_control_id:
