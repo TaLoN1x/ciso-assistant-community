@@ -253,21 +253,32 @@
 		complianceResultColorMap[mappingInference.result] === '#000000' ? 'text-white' : ''
 	);
 
-	// Field visibility
+	// Field visibility — per-RA role sourced from the RA payload (resolved
+	// server-side from Actor-on-Assignment membership). A user can be respondent
+	// on this RA while being auditor on a neighbour in the same CA, so the
+	// page-level `data.viewerRole` aggregate is only a fallback.
 	const fw = data.requirementAssessment.compliance_assessment.framework;
 	const complianceAssessment = data.requirementAssessment.compliance_assessment;
 	const viewerRole: 'respondent' | 'auditor' =
-		data.viewerRole === 'auditor' ? 'auditor' : 'respondent';
+		data.requirementAssessment.viewer_role === 'auditor'
+			? 'auditor'
+			: data.requirementAssessment.viewer_role === 'respondent'
+				? 'respondent'
+				: data.viewerRole === 'auditor'
+					? 'auditor'
+					: 'respondent';
 	const {
 		showResult,
 		showStatus,
 		showScore,
 		showDocumentationScore,
+		showExtendedResult,
 		showObservation,
 		showAppliedControls,
 		showEvidences,
 		showRespondentAlignment,
-		showComments
+		showComments,
+		showAnswers
 	} = getFieldVisibility(complianceAssessment, viewerRole);
 
 	const isAuditor = viewerRole === 'auditor';
@@ -738,7 +749,7 @@
 				<HiddenInput {form} field="compliance_assessment" />
 				<HiddenInput {form} field="nextRequirementAssessmentId" />
 				<div class="flex flex-col my-8 space-y-6">
-					{#if page.data.requirementAssessment.requirement.questions != null && Object.keys(page.data.requirementAssessment.requirement.questions).length !== 0}
+					{#if showAnswers && page.data.requirementAssessment.requirement.questions != null && Object.keys(page.data.requirementAssessment.requirement.questions).length !== 0}
 						<Question
 							{form}
 							field="answers"
@@ -791,7 +802,7 @@
 							/>
 						{/if}
 					{/if}
-					{#if showResult && page.data.requirementAssessment.compliance_assessment.extended_result_enabled}
+					{#if showExtendedResult && page.data.requirementAssessment.compliance_assessment.extended_result_enabled}
 						<Select
 							{form}
 							options={page.data.model.selectOptions['extended_result']}

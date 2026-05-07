@@ -1132,6 +1132,77 @@ def get_auditee_filtered_folder_ids(user) -> set:
     }
 
 
+# --- Per-RA viewer-role resolution ---
+#
+# A user's viewer-role (auditor vs respondent) is a property of the
+# (user, RequirementAssessment) pair, NOT of the user's folder roles.
+# A user is "respondent" on an RA iff they are an Actor on at least one
+# RequirementAssignment that covers that RA. Higher folder roles
+# (analyst / domain-manager / administrator) do NOT override this — a
+# senior reviewer who is also assigned to fill out an RA gets the
+# respondent view on that RA.
+
+
+def get_respondent_ra_ids(user, compliance_assessment) -> set:
+    """RA IDs in `compliance_assessment` where `user` is an Actor on at least
+    one RequirementAssignment covering that RA.
+
+    Returns a set of UUIDs. Single ORM query; safe on SQLite + PostgreSQL.
+    """
+    from core.models import Actor, RequirementAssignment
+
+    user_actors = Actor.get_all_for_user(user)
+    if not user_actors:
+        return set()
+    return set(
+        RequirementAssignment.objects.filter(
+            compliance_assessment=compliance_assessment,
+            actor__in=user_actors,
+        )
+        .values_list("requirement_assessments__id", flat=True)
+        .exclude(requirement_assessments__id__isnull=True)
+    )
+
+
+def resolve_ra_viewer_role(
+    user, requirement_assessment
+) -> Literal["auditor", "respondent"]:
+    """Per-RA viewer role for field-visibility gating.
+
+    Returns "respondent" iff `user` is an Actor on any RequirementAssignment
+    covering this RA. Otherwise "auditor".
+    """
+    from core.models import Actor
+
+    user_actors = Actor.get_all_for_user(user)
+    if not user_actors:
+        return "auditor"
+    is_respondent = requirement_assessment.assignments.filter(
+        actor__in=user_actors
+    ).exists()
+    return "respondent" if is_respondent else "auditor"
+
+
+def get_user_respondent_ra_ids(user) -> set:
+    """All RA IDs (across every CA) where `user` is an Actor on at least one
+    covering RequirementAssignment.
+
+    Single ORM query — feed this to a list-serializer context as
+    `respondent_ra_ids` so per-RA role resolution becomes an O(1) set lookup
+    instead of a per-row query (avoids N+1 on the bare RA list endpoint).
+    """
+    from core.models import Actor, RequirementAssignment
+
+    user_actors = Actor.get_all_for_user(user)
+    if not user_actors:
+        return set()
+    return set(
+        RequirementAssignment.objects.filter(actor__in=user_actors)
+        .values_list("requirement_assessments__id", flat=True)
+        .exclude(requirement_assessments__id__isnull=True)
+    )
+
+
 # --- Field Visibility ---
 #
 # The compliance assessment's `field_visibility` is the single source of truth

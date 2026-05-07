@@ -81,8 +81,16 @@
 
 	const fw = data.requirementAssessment.compliance_assessment.framework;
 	const complianceAssessment = data.requirementAssessment.compliance_assessment;
+	// Per-RA role from the RA payload (server resolves it from Actor membership).
+	// Falls back to the page-level aggregate during the migration window.
 	const viewerRole: 'respondent' | 'auditor' =
-		data.viewerRole === 'auditor' ? 'auditor' : 'respondent';
+		data.requirementAssessment.viewer_role === 'auditor'
+			? 'auditor'
+			: data.requirementAssessment.viewer_role === 'respondent'
+				? 'respondent'
+				: data.viewerRole === 'auditor'
+					? 'auditor'
+					: 'respondent';
 	const {
 		showAppliedControls,
 		showEvidences,

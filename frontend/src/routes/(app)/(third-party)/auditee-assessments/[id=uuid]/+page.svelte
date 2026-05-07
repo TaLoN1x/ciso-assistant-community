@@ -73,7 +73,10 @@
 	let requirementAssessments = $derived(data.requirement_assessments);
 	let complianceAssessment = $derived(data.compliance_assessment);
 
-	// Field visibility based on viewer role (respondent if assigned actor, auditor otherwise)
+	// Field visibility. Within a single assignment all RAs share the same role
+	// because `Assignment.actor` is per-assignment, so `data.viewerRole` (the
+	// assignment-scoped aggregate) is the right signal here. Per-RA
+	// `viewer_role` from the backend agrees with this aggregate by construction.
 	const fw = $derived(complianceAssessment.framework);
 	const viewerRole = $derived((data.viewerRole ?? 'respondent') as 'respondent' | 'auditor');
 	const fieldVis = $derived(getFieldVisibility(complianceAssessment, viewerRole));
@@ -87,6 +90,7 @@
 	const showComments = $derived(fieldVis.showComments);
 	const showStatus = $derived(fieldVis.showStatus);
 	const showExtendedResult = $derived(fieldVis.showExtendedResult);
+	const showAnswers = $derived(fieldVis.showAnswers);
 
 	// Single assignment — the URL param (params.id) IS the assignment ID
 	let assignment = $derived(data.assignment);
@@ -920,7 +924,7 @@
 							method="post"
 						>
 							<!-- Questions (if present) -->
-							{#if requirement.questions != null && Object.keys(requirement.questions).length !== 0}
+							{#if showAnswers && requirement.questions != null && Object.keys(requirement.questions).length !== 0}
 								<div class="flex flex-col w-full space-y-2">
 									<Question
 										questions={requirement.questions}

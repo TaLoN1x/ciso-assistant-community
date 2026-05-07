@@ -425,6 +425,7 @@ export function getFieldVisibility(
 	showRespondentAlignment: boolean;
 	showComments: boolean;
 	showExtendedResult: boolean;
+	showAnswers: boolean;
 } {
 	return {
 		showResult: isFieldVisible(complianceAssessment, 'result', viewerRole),
@@ -440,7 +441,8 @@ export function getFieldVisibility(
 			viewerRole
 		),
 		showComments: isFieldVisible(complianceAssessment, 'comments', viewerRole),
-		showExtendedResult: isFieldVisible(complianceAssessment, 'extended_result', viewerRole)
+		showExtendedResult: isFieldVisible(complianceAssessment, 'extended_result', viewerRole),
+		showAnswers: isFieldVisible(complianceAssessment, 'answers', viewerRole)
 	};
 }
 

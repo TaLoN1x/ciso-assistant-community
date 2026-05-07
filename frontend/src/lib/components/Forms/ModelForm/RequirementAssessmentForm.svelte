@@ -8,6 +8,7 @@
 	import { m } from '$paraglide/messages';
 	import AutocompleteSelect from '../AutocompleteSelect.svelte';
 	import FolderTreeSelect from '../FolderTreeSelect.svelte';
+	import { getFieldVisibility } from '$lib/utils/helpers';
 
 	interface Props {
 		form: SuperValidated<any>;
@@ -28,6 +29,14 @@
 	}: Props = $props();
 
 	let isParentLocked = $derived(object?.compliance_assessment?.is_locked || false);
+
+	// Per-RA viewer role from the serialized payload, with a safe auditor
+	// default (used by create flows where no instance exists yet). Field
+	// visibility is gated against this role so the fallback form honours the
+	// same rules as the unified edit page.
+	const viewerRole: 'auditor' | 'respondent' =
+		object?.viewer_role === 'respondent' ? 'respondent' : 'auditor';
+	const fieldVis = getFieldVisibility(object?.compliance_assessment, viewerRole);
 </script>
 
 {#if context === 'selectEvidences'}
@@ -49,23 +58,27 @@
 		label={m.appliedControls()}
 	/>
 {:else}
-	<Select
-		{form}
-		options={model.selectOptions['status']}
-		field="status"
-		label={m.status()}
-		cacheLock={cacheLocks['status']}
-		bind:cachedValue={formDataCache['status']}
-	/>
-	<Select
-		{form}
-		options={model.selectOptions['result']}
-		field="result"
-		label={m.result()}
-		cacheLock={cacheLocks['result']}
-		bind:cachedValue={formDataCache['result']}
-	/>
-	{#if object?.compliance_assessment?.extended_result_enabled}
+	{#if fieldVis.showStatus}
+		<Select
+			{form}
+			options={model.selectOptions['status']}
+			field="status"
+			label={m.status()}
+			cacheLock={cacheLocks['status']}
+			bind:cachedValue={formDataCache['status']}
+		/>
+	{/if}
+	{#if fieldVis.showResult}
+		<Select
+			{form}
+			options={model.selectOptions['result']}
+			field="result"
+			label={m.result()}
+			cacheLock={cacheLocks['result']}
+			bind:cachedValue={formDataCache['result']}
+		/>
+	{/if}
+	{#if fieldVis.showExtendedResult && object?.compliance_assessment?.extended_result_enabled}
 		<Select
 			{form}
 			options={model.selectOptions['extended_result']}
@@ -75,13 +88,15 @@
 			bind:cachedValue={formDataCache['extended_result']}
 		/>
 	{/if}
-	<MarkdownField
-		{form}
-		field="observation"
-		label={m.observation()}
-		cacheLock={cacheLocks['observation']}
-		bind:cachedValue={formDataCache['observation']}
-	/>
+	{#if fieldVis.showObservation}
+		<MarkdownField
+			{form}
+			field="observation"
+			label={m.observation()}
+			cacheLock={cacheLocks['observation']}
+			bind:cachedValue={formDataCache['observation']}
+		/>
+	{/if}
 	<FolderTreeSelect
 		{form}
 		field="folder"

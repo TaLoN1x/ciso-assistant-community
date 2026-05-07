@@ -79,6 +79,13 @@
 		{ id: 'in_review', label: m.inReview() },
 		{ id: 'done', label: m.done() }
 	];
+	const extended_result_options = [
+		{ id: 'major_nonconformity', label: m.majorNonconformity() },
+		{ id: 'minor_nonconformity', label: m.minorNonconformity() },
+		{ id: 'observation_sensitive_point', label: m.observationSensitivePoint() },
+		{ id: 'opportunity_for_improvement', label: m.opportunityForImprovement() },
+		{ id: 'good_practice', label: m.goodPractice() }
+	];
 
 	const requirementHashmap = Object.fromEntries(
 		data.requirements.map((requirement: Record<string, any>) => [requirement.id, requirement])
@@ -93,17 +100,21 @@
 		complianceAssessment.is_locked || complianceAssessment.status === 'in_review'
 	);
 
-	// Field visibility based on viewer role (server-computed from actor membership)
+	// Per-RA viewer role: each RA carries its own `viewer_role` from the
+	// backend (resolved via Actor-on-Assignment membership). A user can be
+	// respondent on some RAs and auditor on others within the same CA, so
+	// visibility is computed per row inside the iteration. The page-level
+	// `viewerRole` stays as the aggregate, used only for top-level chrome
+	// (e.g. the "auditor sees this" badge).
 	const viewerRole: 'respondent' | 'auditor' = $derived(
 		(data.viewerRole ?? 'auditor') as 'respondent' | 'auditor'
 	);
-	const fieldVis = $derived(getFieldVisibility(complianceAssessment, viewerRole));
-	const showResult = $derived(fieldVis.showResult);
-	const showScore = $derived(fieldVis.showScore);
-	const showObservation = $derived(fieldVis.showObservation);
-	const showAppliedControls = $derived(fieldVis.showAppliedControls);
-	const showEvidences = $derived(fieldVis.showEvidences);
-	const showRespondentAlignment = $derived(fieldVis.showRespondentAlignment);
+	function rowRole(ra: Record<string, any>): 'respondent' | 'auditor' {
+		return ra?.viewer_role === 'respondent' ? 'respondent' : 'auditor';
+	}
+	function rowVis(ra: Record<string, any>) {
+		return getFieldVisibility(complianceAssessment, rowRole(ra));
+	}
 
 	const hasQuestions = $derived(
 		requirementAssessments.some(
@@ -431,6 +442,8 @@
 		{/if}
 		<ul data-testid="requirement-assessments">
 			{#each requirementAssessments as requirementAssessment, i}
+				{@const fieldVis = rowVis(requirementAssessment)}
+				{@const rowRoleValue = rowRole(requirementAssessment)}
 				<li class="list-none">
 					{#if requirementAssessment.display_mode === 'splash' || requirementAssessment.requirement?.display_mode === 'splash'}
 						<!-- Splash screen node: full-width markdown block -->
@@ -589,7 +602,7 @@
 										</div>
 									{/if}
 									<!-- Auditor badge: respondent's alignment answer -->
-									{#if viewerRole === 'auditor' && showRespondentAlignment && requirementAssessment.respondent_alignment}
+									{#if rowRoleValue === 'auditor' && fieldVis.showRespondentAlignment && requirementAssessment.respondent_alignment}
 										<div class="flex flex-col items-center my-2">
 											<p class="text-xs italic text-surface-600">
 												{m.respondentAnswered()}
@@ -610,10 +623,17 @@
 										action="{actionPath}?/updateRequirementAssessment"
 										method="post"
 									>
-										{#if !questionnaireMode && showResult}
+										{#if !questionnaireMode && (fieldVis.showResult || fieldVis.showStatus)}
+											{@const showStatusBlock =
+												fieldVis.showStatus && complianceAssessment.progress_status_enabled}
+											{@const showResultBlock = fieldVis.showResult}
 											<div class="flex flex-row w-full space-x-2 my-4">
-												{#if complianceAssessment.progress_status_enabled}
-													<div class="flex flex-col items-center w-1/2">
+												{#if showStatusBlock}
+													<div
+														class="flex flex-col items-center {showResultBlock
+															? 'w-1/2'
+															: 'w-full'}"
+													>
 														<p class="flex items-center font-semibold text-blue-600 italic">
 															{m.status()}
 														</p>
@@ -634,46 +654,69 @@
 														/>
 													</div>
 												{/if}
-												<div
-													class="flex flex-col items-center {complianceAssessment.progress_status_enabled
-														? 'w-1/2'
-														: 'w-full'}"
-												>
-													<p class="flex items-center font-semibold text-purple-600 italic">
-														{m.result()}
-													</p>
-													{#if hasComputedResult(requirementAssessment.requirement.questions)}
-														<span
-															class="badge text-sm font-semibold"
-															style="background-color: {complianceResultColorMap[
-																requirementAssessment.result
-															] || '#ddd'}"
-														>
-															{safeTranslate(requirementAssessment.result)}
-														</span>
-													{:else}
-														<RadioGroup
-															possibleOptions={result_options}
-															key="id"
-															labelKey="label"
-															field="result"
-															colorMap={complianceResultTailwindColorMap}
-															disabled={isReadOnly}
-															initialValue={requirementAssessment.result}
-															onChange={(newValue) => {
-																const newResult =
-																	requirementAssessment.result === newValue
-																		? 'not_assessed'
-																		: newValue;
-																requirementAssessment.result = newResult;
-																update(requirementAssessment, 'result');
-															}}
-														/>
-													{/if}
-												</div>
+												{#if showResultBlock}
+													<div
+														class="flex flex-col items-center {showStatusBlock
+															? 'w-1/2'
+															: 'w-full'}"
+													>
+														<p class="flex items-center font-semibold text-purple-600 italic">
+															{m.result()}
+														</p>
+														{#if hasComputedResult(requirementAssessment.requirement.questions)}
+															<span
+																class="badge text-sm font-semibold"
+																style="background-color: {complianceResultColorMap[
+																	requirementAssessment.result
+																] || '#ddd'}"
+															>
+																{safeTranslate(requirementAssessment.result)}
+															</span>
+														{:else}
+															<RadioGroup
+																possibleOptions={result_options}
+																key="id"
+																labelKey="label"
+																field="result"
+																colorMap={complianceResultTailwindColorMap}
+																disabled={isReadOnly}
+																initialValue={requirementAssessment.result}
+																onChange={(newValue) => {
+																	const newResult =
+																		requirementAssessment.result === newValue
+																			? 'not_assessed'
+																			: newValue;
+																	requirementAssessment.result = newResult;
+																	update(requirementAssessment, 'result');
+																}}
+															/>
+														{/if}
+													</div>
+												{/if}
 											</div>
 										{/if}
-										{#if requirementAssessment.requirement.questions != null && Object.keys(requirementAssessment.requirement.questions).length !== 0}
+										{#if !questionnaireMode && fieldVis.showExtendedResult && complianceAssessment.extended_result_enabled}
+											<div class="flex flex-col items-center w-full my-2">
+												<p class="flex items-center font-semibold text-purple-600 italic">
+													{m.extendedResult()}
+												</p>
+												<RadioGroup
+													possibleOptions={extended_result_options}
+													key="id"
+													labelKey="label"
+													field="extended_result"
+													disabled={isReadOnly}
+													initialValue={requirementAssessment.extended_result ?? null}
+													onChange={(newValue) => {
+														const next =
+															requirementAssessment.extended_result === newValue ? null : newValue;
+														requirementAssessment.extended_result = next;
+														update(requirementAssessment, 'extended_result');
+													}}
+												/>
+											</div>
+										{/if}
+										{#if fieldVis.showAnswers && requirementAssessment.requirement.questions != null && Object.keys(requirementAssessment.requirement.questions).length !== 0}
 											<div class="flex flex-col w-full space-y-2">
 												<Question
 													questions={requirementAssessment.requirement.questions}
@@ -691,7 +734,7 @@
 											</div>
 										{/if}
 										<!-- Auto-alignment question (when no framework questions) -->
-										{#if shouldShowAutoQuestion(requirementAssessment.requirement, viewerRole, complianceAssessment)}
+										{#if shouldShowAutoQuestion(requirementAssessment.requirement, rowRoleValue, complianceAssessment)}
 											<div class="flex flex-col w-full space-y-2">
 												<Question
 													questions={buildAutoAlignmentQuestion({
@@ -721,7 +764,7 @@
 												? 'pointer-events-none opacity-60'
 												: ''}"
 										>
-											{#if showScore && !shallow && complianceAssessment.scoring_enabled}
+											{#if fieldVis.showScore && !shallow && complianceAssessment.scoring_enabled}
 												{#if hasComputedScore(requirementAssessment.requirement.questions)}
 													<div class="flex flex-row items-center space-x-4">
 														<span class="font-medium">{m.score()}</span>
@@ -787,7 +830,7 @@
 															</div>
 														{/snippet}
 													</Score>
-													{#if complianceAssessment.show_documentation_score}
+													{#if complianceAssessment.show_documentation_score && fieldVis.showDocumentationScore}
 														<Score
 															form={docScoreForms[requirementAssessment.id]}
 															min_score={complianceAssessment.min_score}
@@ -805,7 +848,7 @@
 														/>
 													{/if}
 												{/if}
-											{:else if complianceAssessment.scoring_enabled && complianceAssessment.show_documentation_score && requirementAssessment.is_scored}
+											{:else if complianceAssessment.scoring_enabled && complianceAssessment.show_documentation_score && fieldVis.showDocumentationScore && requirementAssessment.is_scored}
 												<div class="flex flex-row items-center space-x-2 w-full">
 													<span>{m.implementationScoreResult()}</span>
 													<div class="relative">
@@ -888,7 +931,7 @@
 												value={accordionItems[requirementAssessment.id]}
 												onValueChange={(e) => (accordionItems[requirementAssessment.id] = e.value)}
 											>
-												{#if showObservation}
+												{#if fieldVis.showObservation}
 													{#if shallow}
 														{#if requirementAssessment.observation}
 															<MarkdownRenderer
@@ -932,7 +975,7 @@
 													{/if}
 												{/if}
 
-												{#if showAppliedControls}
+												{#if fieldVis.showAppliedControls}
 													{#if requirementAssessment.applied_controls.length === 0 && shallow}
 														<p class="text-gray-400 italic">{m.noAppliedControlYet()}</p>
 													{:else}
@@ -1010,7 +1053,7 @@
 													{/if}
 												{/if}
 
-												{#if showEvidences}
+												{#if fieldVis.showEvidences}
 													{#if requirementAssessment.evidences.length === 0 && shallow}
 														<p class="text-gray-400 italic" data-testid="no-evidence">
 															{m.noEvidences()}

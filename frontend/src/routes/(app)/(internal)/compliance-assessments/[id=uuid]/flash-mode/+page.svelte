@@ -17,11 +17,7 @@
 		data.compliance_assessment.is_locked || data.compliance_assessment.status === 'in_review'
 	);
 
-	// Field visibility for auditor role
 	const complianceAssessment = $derived(data.compliance_assessment);
-	const fieldVis = $derived(getFieldVisibility(complianceAssessment, 'auditor'));
-	const showResult = $derived(fieldVis.showResult);
-	const showObservation = $derived(fieldVis.showObservation);
 
 	const possible_options = [
 		{ id: 'not_assessed', label: m.notAssessed() },
@@ -77,6 +73,19 @@
 		currentNavItem?.type === 'assessment' ? currentNavItem.data : null
 	);
 	let currentSplashNode = $derived(currentNavItem?.type === 'splash' ? currentNavItem.data : null);
+
+	// Per-RA field visibility. The page is route-gated to non-third-party users
+	// by the (internal) layout, but a non-third-party auditee with mixed
+	// assignments can still see RAs they're a respondent on alongside ones
+	// they're not, so we resolve role per card from
+	// `currentRequirementAssessment.viewer_role`.
+	const cardViewerRole: 'respondent' | 'auditor' = $derived(
+		currentRequirementAssessment?.viewer_role === 'respondent' ? 'respondent' : 'auditor'
+	);
+	const fieldVis = $derived(getFieldVisibility(complianceAssessment, cardViewerRole));
+	const showResult = $derived(fieldVis.showResult);
+	const showObservation = $derived(fieldVis.showObservation);
+	const showAnswers = $derived(fieldVis.showAnswers);
 
 	let color = $derived(
 		currentRequirementAssessment
@@ -398,7 +407,7 @@
 								</div>
 							{/if}
 
-							{#if hasQuestions}
+							{#if hasQuestions && showAnswers}
 								<div class="mt-4">
 									<Question
 										questions={currentQuestions}

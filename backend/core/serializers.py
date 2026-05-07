@@ -2569,6 +2569,20 @@ class ComplianceAssessmentReadSerializer(AssessmentReadSerializer):
     extended_result_enabled = serializers.BooleanField(read_only=True)
     progress_status_enabled = serializers.BooleanField(read_only=True)
 
+    # Aggregate viewer role: "respondent" iff the requesting user is an Actor
+    # on at least one RequirementAssignment in this CA, else "auditor". The
+    # frontend uses this for top-level UI chrome; per-RA gating reads each
+    # RA's own `viewer_role` field.
+    viewer_role = serializers.SerializerMethodField()
+
+    def get_viewer_role(self, obj):
+        request = self.context.get("request")
+        if request is None or not getattr(request, "user", None):
+            return "auditor"
+        from core.utils import get_respondent_ra_ids
+
+        return "respondent" if get_respondent_ra_ids(request.user, obj) else "auditor"
+
     class Meta:
         model = ComplianceAssessment
         fields = "__all__"
@@ -2920,10 +2934,30 @@ class RequirementAssessmentReadSerializer(BaseModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
 
-        viewer_role = self.context.get("viewer_role", "auditor")
         ca = getattr(instance, "compliance_assessment", None)
         if ca is None:
             return data
+
+        # Per-RA viewer role. Resolution order:
+        #   1. `respondent_ra_ids` set (precomputed by list endpoints — one
+        #      query per CA instead of one per RA).
+        #   2. `request` in context — resolve inline for single-RA detail GETs.
+        #   3. Legacy `viewer_role` string in context (some callers still pass
+        #      a single role for backward compat).
+        #   4. Silent default to "auditor".
+        respondent_ra_ids = self.context.get("respondent_ra_ids")
+        if respondent_ra_ids is not None:
+            viewer_role = (
+                "respondent" if instance.id in respondent_ra_ids else "auditor"
+            )
+        else:
+            request = self.context.get("request")
+            if request is not None and getattr(request, "user", None) is not None:
+                from core.utils import resolve_ra_viewer_role
+
+                viewer_role = resolve_ra_viewer_role(request.user, instance)
+            else:
+                viewer_role = self.context.get("viewer_role", "auditor")
 
         # Strip fields the viewer is not allowed to read. Resolve through the
         # cascade (CA overrides → DEFAULT_VISIBILITY → EVERYONE_EDIT) so that
@@ -2936,6 +2970,9 @@ class RequirementAssessmentReadSerializer(BaseModelSerializer):
             if not is_field_visible_to(ca, field_name, viewer_role):
                 data.pop(field_name, None)
 
+        # Surface the resolved role so the frontend can gate per-RA without a
+        # second round-trip.
+        data["viewer_role"] = viewer_role
         return data
 
     class Meta:
@@ -2952,16 +2989,15 @@ class RequirementAssessmentWriteSerializer(BaseModelSerializer):
         # individual field choices — a placeholder value in a disabled select
         # would otherwise trip choice validation. Security enforcement is repeated
         # in validate() since to_internal_value runs before object-level checks.
+        # The role is resolved per-RA from Actor-on-Assignment membership, NOT
+        # from folder roles — a user with a higher folder role is still gated
+        # as respondent on RAs they were explicitly assigned to fill out.
         request = self.context.get("request")
         if request and self.instance:
-            from core.utils import (
-                get_respondent_filtered_folder_ids,
-                is_field_editable_by,
-            )
+            from core.utils import is_field_editable_by, resolve_ra_viewer_role
 
-            ca = self.instance.compliance_assessment
-            respondent_folders = get_respondent_filtered_folder_ids(request.user)
-            if respondent_folders and ca.folder_id in respondent_folders:
+            if resolve_ra_viewer_role(request.user, self.instance) == "respondent":
+                ca = self.instance.compliance_assessment
                 # Cascade through DEFAULT_VISIBILITY so default-hidden keys are
                 # stripped from a respondent's payload even when the CA has an
                 # empty field_visibility. Structural fields (id, requirement,
@@ -2996,16 +3032,14 @@ class RequirementAssessmentWriteSerializer(BaseModelSerializer):
                 "⚠️ Cannot modify the requirement when the audit is in review."
             )
 
-        # Assignment-level and field-level guards for respondent users (auditee or third-party)
+        # Assignment-level and field-level guards. The role is per-RA: if the
+        # user is an Actor on any assignment covering THIS RA, they're gated as
+        # respondent here regardless of any higher folder role they hold.
         request = self.context.get("request")
         if request and self.instance and compliance_assessment:
-            from core.utils import get_respondent_filtered_folder_ids
+            from core.utils import resolve_ra_viewer_role
 
-            respondent_folders = get_respondent_filtered_folder_ids(request.user)
-            if (
-                respondent_folders
-                and compliance_assessment.folder_id in respondent_folders
-            ):
+            if resolve_ra_viewer_role(request.user, self.instance) == "respondent":
                 locked_assignment = self.instance.assignments.filter(
                     status__in=["submitted", "closed"]
                 ).first()

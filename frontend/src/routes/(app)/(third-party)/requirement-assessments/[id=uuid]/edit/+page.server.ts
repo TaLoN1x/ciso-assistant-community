@@ -65,6 +65,15 @@ export const load = (async ({ fetch, params }) => {
 	object.security_exceptions =
 		object.security_exceptions?.map((security_exception) => security_exception.id) ?? [];
 	object.nextRequirementAssessmentId = nextRequirementAssessmentId;
+	// The read serializer strips fields the viewer cannot see (e.g. `status` is
+	// `AUDITOR_ONLY` by default, so a respondent's payload has no `status` key).
+	// The form's zod schema treats `status` as required — without a placeholder
+	// the load fails validation. The submit action already drops fields the
+	// current GET response doesn't expose, so these placeholders are never
+	// persisted: they exist purely so superValidate accepts the input shape.
+	if (object.status === undefined) object.status = 'to_do';
+	if (object.result === undefined) object.result = 'not_assessed';
+	if (object.answers === undefined) object.answers = {};
 	const form = await superValidate(object, zod(schema), { errors: true });
 
 	const selectOptions: Record<string, any> = {};

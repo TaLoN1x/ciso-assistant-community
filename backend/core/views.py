@@ -12682,17 +12682,25 @@ class ComplianceAssessmentViewSet(BaseModelViewSet):
                 parent = nodes_by_urn.get(req.parent_urn)
                 if parent:
                     req._parent_requirement_obj = parent
-        # Determine viewer role based on auditee status
-        auditee_folders = get_auditee_filtered_folder_ids(request.user)
-        is_auditee = bool(
-            auditee_folders and compliance_assessment.folder_id in auditee_folders
-        )
-        viewer_role = "respondent" if is_auditee else "auditor"
+        # Per-RA viewer role: respondent iff the user is an Actor on at least
+        # one RequirementAssignment covering that RA. Higher folder roles do
+        # NOT override actor membership — a senior reviewer who is also
+        # assigned gets the respondent view on their RAs. Top-level
+        # `viewer_role` is the aggregate over the user's RAs in this CA, kept
+        # for backward compatibility (frontend pages that haven't migrated to
+        # per-RA reading still use it).
+        from core.utils import get_respondent_ra_ids
+
+        respondent_ra_ids = get_respondent_ra_ids(request.user, compliance_assessment)
+        viewer_role = "respondent" if respondent_ra_ids else "auditor"
 
         requirement_assessments = RequirementAssessmentReadSerializer(
             requirement_assessments_objects,
             many=True,
-            context={"viewer_role": viewer_role},
+            context={
+                "respondent_ra_ids": respondent_ra_ids,
+                "request": request,
+            },
         ).data
         requirements = RequirementNodeReadSerializer(
             requirements_objects, many=True
@@ -12768,12 +12776,16 @@ class ComplianceAssessmentViewSet(BaseModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="is-auditee")
     def is_auditee(self, request, pk):
-        """Returns whether the current user is an auditee for this compliance assessment."""
+        """Returns whether the current user has any respondent assignment on this CA.
+
+        The endpoint name is a misnomer kept for backward compatibility — it
+        now reports respondent-ness via Actor-on-Assignment membership and
+        therefore includes third-party respondents alongside auditees.
+        """
+        from core.utils import get_respondent_ra_ids
+
         compliance_assessment = self.get_object()
-        auditee_folders = get_auditee_filtered_folder_ids(request.user)
-        is_auditee = bool(
-            auditee_folders and compliance_assessment.folder_id in auditee_folders
-        )
+        is_auditee = bool(get_respondent_ra_ids(request.user, compliance_assessment))
         return Response({"is_auditee": is_auditee})
 
     @action(detail=False, methods=["get"], url_path="auditee-dashboard")
@@ -14002,6 +14014,21 @@ class RequirementAssessmentViewSet(BaseModelViewSet):
 
     def update(self, request, *args, **kwargs):
         return super().update(request, *args, **kwargs)
+
+    def get_serializer_context(self):
+        # Pre-compute the user's respondent RA set once per request and put it
+        # in serializer context. Without this the read serializer would call
+        # `resolve_ra_viewer_role` per instance on the bare list endpoint —
+        # one extra query per row (N+1). Detail GETs reuse the same set so
+        # they cost a single query instead of two.
+        ctx = super().get_serializer_context()
+        if self.action in ("list", "retrieve") and self.request.user.is_authenticated:
+            from core.utils import get_user_respondent_ra_ids
+
+            ctx.setdefault(
+                "respondent_ra_ids", get_user_respondent_ra_ids(self.request.user)
+            )
+        return ctx
 
     @action(detail=False, name="Get updatable measures")
     def updatables(self, request):
@@ -17364,7 +17391,11 @@ class RequirementAssignmentViewSet(BaseModelViewSet):
         assignment = self.get_object()
         compliance_assessment = assignment.compliance_assessment
 
-        # Determine viewer role: respondent if user is an assigned actor, auditor otherwise
+        # Determine viewer role: respondent if user is an assigned actor, auditor otherwise.
+        # Within a single assignment all RAs share the same role since
+        # `Assignment.actor` is per-assignment, not per-RA — so the per-RA
+        # `respondent_ra_ids` set is either all of the assignment's RAs (if the
+        # user is an actor on it) or empty.
         user_actors = Actor.get_all_for_user(request.user)
         is_assigned_actor = assignment.actor.filter(
             id__in=[a.id for a in user_actors]
@@ -17374,6 +17405,7 @@ class RequirementAssignmentViewSet(BaseModelViewSet):
         assigned_ra_ids = set(
             assignment.requirement_assessments.values_list("id", flat=True)
         )
+        respondent_ra_ids = assigned_ra_ids if is_assigned_actor else set()
 
         requirement_assessments_objects = list(
             compliance_assessment.get_requirement_assessments(
@@ -17425,7 +17457,10 @@ class RequirementAssignmentViewSet(BaseModelViewSet):
         requirement_assessments = RequirementAssessmentReadSerializer(
             requirement_assessments_objects,
             many=True,
-            context={"viewer_role": viewer_role},
+            context={
+                "respondent_ra_ids": respondent_ra_ids,
+                "request": request,
+            },
         ).data
         requirements = RequirementNodeReadSerializer(
             requirements_objects, many=True
