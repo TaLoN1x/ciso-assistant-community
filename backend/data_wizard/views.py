@@ -92,6 +92,7 @@ from core.models import FilteringLabel
 from core.utils import get_global_currency
 from uuid import UUID
 from django.core.files.uploadedfile import UploadedFile
+from django.db.models import Q
 from django.http import HttpRequest
 from datetime import datetime
 from typing import Optional, Final, ClassVar, Mapping, Any
@@ -1698,18 +1699,21 @@ class VulnerabilityRecordConsumer(RecordConsumer[None]):
             token = token.strip()
             if not token:
                 continue
-            obj = (
-                AppliedControl.objects.filter(ref_id=token, folder_id=folder_id).first()
-                or AppliedControl.objects.filter(
-                    name=token, folder_id=folder_id
-                ).first()
+            candidates = list(
+                AppliedControl.objects.filter(
+                    Q(ref_id=token) | Q(name=token), folder_id=folder_id
+                )
+            )
+            obj = next(
+                (c for c in candidates if c.ref_id == token),
+                candidates[0] if candidates else None,
             )
             if obj:
                 applied_controls.append(obj.id)
             else:
                 return {}, Error(
                     record=record,
-                    error=f"No applied control named '{token}' found in folder",
+                    error=f"No applied control with ref_id or name '{token}' found in folder",
                 )
 
         assets = []
@@ -1717,16 +1721,21 @@ class VulnerabilityRecordConsumer(RecordConsumer[None]):
             token = token.strip()
             if not token:
                 continue
-            obj = (
-                Asset.objects.filter(ref_id=token, folder_id=folder_id).first()
-                or Asset.objects.filter(name=token, folder_id=folder_id).first()
+            candidates = list(
+                Asset.objects.filter(
+                    Q(ref_id=token) | Q(name=token), folder_id=folder_id
+                )
+            )
+            obj = next(
+                (c for c in candidates if c.ref_id == token),
+                candidates[0] if candidates else None,
             )
             if obj:
                 assets.append(obj.id)
             else:
                 return {}, Error(
                     record=record,
-                    error=f"No asset named '{token}' found in folder",
+                    error=f"No asset with ref_id or name '{token}' found in folder",
                 )
 
         security_exceptions = []
@@ -1734,20 +1743,21 @@ class VulnerabilityRecordConsumer(RecordConsumer[None]):
             token = token.strip()
             if not token:
                 continue
-            obj = (
+            candidates = list(
                 SecurityException.objects.filter(
-                    ref_id=token, folder_id=folder_id
-                ).first()
-                or SecurityException.objects.filter(
-                    name=token, folder_id=folder_id
-                ).first()
+                    Q(ref_id=token) | Q(name=token), folder_id=folder_id
+                )
+            )
+            obj = next(
+                (c for c in candidates if c.ref_id == token),
+                candidates[0] if candidates else None,
             )
             if obj:
                 security_exceptions.append(obj.id)
             else:
                 return {}, Error(
                     record=record,
-                    error=f"No security exception named '{token}' found in folder",
+                    error=f"No security exception with ref_id or name '{token}' found in folder",
                 )
 
         data = {
@@ -1775,19 +1785,6 @@ class VulnerabilityRecordConsumer(RecordConsumer[None]):
             data["filtering_labels"] = filtering_labels
 
         return data, None
-
-    def find_existing(self, record_data: dict):
-        folder_id = record_data.get("folder")
-        ref_id = record_data.get("ref_id")
-        if ref_id:
-            existing = Vulnerability.objects.filter(
-                ref_id=ref_id, folder_id=folder_id
-            ).first()
-            if existing:
-                return existing
-        return Vulnerability.objects.filter(
-            name=record_data.get("name"), folder_id=folder_id
-        ).first()
 
 
 class ElementaryActionRecordConsumer(RecordConsumer):
