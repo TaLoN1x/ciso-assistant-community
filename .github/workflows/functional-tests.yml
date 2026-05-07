@@ -51,9 +51,9 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 11
 
       - name: Install community frontend dependencies
         working-directory: ${{ env.frontend-directory }}
@@ -97,9 +97,9 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 11
 
       - name: Build enterprise frontend
         working-directory: ${{ env.enterprise-frontend-directory }}
@@ -243,9 +243,9 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 11
 
       - name: Install community frontend dependencies (if not cached/part of build artifact)
         working-directory: ${{ env.frontend-directory }}
@@ -424,9 +424,9 @@ jobs:
         run: make pre-build
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 11
 
       - name: Install enterprise frontend dependencies
         working-directory: ${{ env.enterprise-frontend-build-directory }}

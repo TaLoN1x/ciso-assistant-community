@@ -36,9 +36,9 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - name: Install pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 11
       - name: Install prettier
         working-directory: ${{env.working-directory}}
         run: pnpm add --save-dev prettier
@@ -73,9 +73,9 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - name: Install pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 11
       - name: Install prettier
         working-directory: ${{env.working-directory}}
         run: pnpm add --save-dev prettier

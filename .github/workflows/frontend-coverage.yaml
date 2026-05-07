@@ -37,9 +37,9 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - name: Install pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 11
       - name: Install dependencies
         working-directory: ${{env.working-directory}}
         run: pnpm i --frozen-lockfile
