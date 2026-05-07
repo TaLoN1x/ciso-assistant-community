@@ -297,24 +297,31 @@ def _resolve_filtering_labels(value) -> list[UUID]:
 
 def _resolve_vulnerabilities(value, folder) -> tuple[list[UUID], list[str]]:
     """
-    Parse pipe- or comma-separated vulnerability names and return a tuple of
-    (list of resolved Vulnerability IDs, list of names that failed to resolve).
+    Parse pipe- or comma-separated vulnerability identifiers and return a tuple of
+    (list of resolved Vulnerability IDs, list of values that failed to resolve).
+
+    Each token is matched against existing vulnerabilities in the given folder by
+    ref_id first, then by name.  If no match is found a new Vulnerability is created
+    using the token as its name.
     """
     if not value or not isinstance(value, str):
         return [], []
-    vuln_names = [name.strip() for name in re.split(r"[|,]", value) if name.strip()]
+    tokens = [t.strip() for t in re.split(r"[|,]", value) if t.strip()]
     vuln_ids: list[UUID] = []
-    failed_names: list[str] = []
-    for vuln_name in vuln_names:
+    failed_tokens: list[str] = []
+    for token in tokens:
         try:
-            vuln, _created = Vulnerability.objects.get_or_create(
-                name=vuln_name, folder=folder
+            vuln = (
+                Vulnerability.objects.filter(ref_id=token, folder=folder).first()
+                or Vulnerability.objects.filter(name=token, folder=folder).first()
             )
+            if vuln is None:
+                vuln = Vulnerability.objects.create(name=token, folder=folder)
             vuln_ids.append(vuln.id)
         except Exception:
-            logging.exception(f"Failed to resolve vulnerability {vuln_name}")
-            failed_names.append(vuln_name)
-    return vuln_ids, failed_names
+            logging.exception(f"Failed to resolve vulnerability {token}")
+            failed_tokens.append(token)
+    return vuln_ids, failed_tokens
 
 
 class RecordFileType(enum.StrEnum):
@@ -471,13 +478,36 @@ class RecordConsumer[Context](ABC):
         pass
 
     def find_existing(self, record_data: dict):
-        """Find an existing record matching this data based on the model's fields_to_check."""
+        """Find an existing record matching this data based on the model's fields_to_check.
+
+        When ref_id is listed in fields_to_check and a non-empty ref_id is supplied,
+        it is tried first (exact match + folder).  On miss the lookup falls back to
+        the remaining fields (typically name) so that either identifier alone is
+        sufficient to detect a duplicate.
+        """
         model_class = self.SERIALIZER_CLASS.Meta.model
         fields_to_check = getattr(model_class, "fields_to_check", [])
         if not fields_to_check:
             return None
+
+        folder = record_data.get("folder")
+        folder_filter = {}
+        if folder and hasattr(model_class, "folder"):
+            folder_filter["folder"] = folder
+
+        if "ref_id" in fields_to_check:
+            ref_id = record_data.get("ref_id")
+            if ref_id:
+                existing = model_class.objects.filter(
+                    ref_id=ref_id, **folder_filter
+                ).first()
+                if existing:
+                    return existing
+
         query = {}
         for f in fields_to_check:
+            if f == "ref_id":
+                continue
             value = record_data.get(f)
             if value is None or value == "":
                 continue
@@ -487,9 +517,7 @@ class RecordConsumer[Context](ABC):
                 query[f] = value
         if not query:
             return None
-        folder = record_data.get("folder")
-        if folder and hasattr(model_class, "folder"):
-            query["folder"] = folder
+        query.update(folder_filter)
         return model_class.objects.filter(**query).first()
 
     def _build_update_data(self, record: dict, record_data: dict) -> dict:
@@ -1598,49 +1626,60 @@ class VulnerabilityRecordConsumer(RecordConsumer[None]):
             status = "--"
 
         applied_controls = []
-        for ap_name in (record.get("applied_controls") or "").splitlines():
-            ap_name = ap_name.strip()
-            if not ap_name:
+        for token in (record.get("applied_controls") or "").splitlines():
+            token = token.strip()
+            if not token:
                 continue
-            obj = AppliedControl.objects.filter(
-                name=ap_name, folder_id=folder_id
-            ).first()
+            obj = (
+                AppliedControl.objects.filter(ref_id=token, folder_id=folder_id).first()
+                or AppliedControl.objects.filter(
+                    name=token, folder_id=folder_id
+                ).first()
+            )
             if obj:
                 applied_controls.append(obj.id)
             else:
                 return {}, Error(
                     record=record,
-                    error=f"No applied control named '{ap_name}' found in folder",
+                    error=f"No applied control named '{token}' found in folder",
                 )
 
         assets = []
-        for asset_name in (record.get("assets") or "").splitlines():
-            asset_name = asset_name.strip()
-            if not asset_name:
+        for token in (record.get("assets") or "").splitlines():
+            token = token.strip()
+            if not token:
                 continue
-            obj = Asset.objects.filter(name=asset_name, folder_id=folder_id).first()
+            obj = (
+                Asset.objects.filter(ref_id=token, folder_id=folder_id).first()
+                or Asset.objects.filter(name=token, folder_id=folder_id).first()
+            )
             if obj:
                 assets.append(obj.id)
             else:
                 return {}, Error(
                     record=record,
-                    error=f"No asset named '{asset_name}' found in folder",
+                    error=f"No asset named '{token}' found in folder",
                 )
 
         security_exceptions = []
-        for se_name in (record.get("security_exceptions") or "").splitlines():
-            se_name = se_name.strip()
-            if not se_name:
+        for token in (record.get("security_exceptions") or "").splitlines():
+            token = token.strip()
+            if not token:
                 continue
-            obj = SecurityException.objects.filter(
-                name=se_name, folder_id=folder_id
-            ).first()
+            obj = (
+                SecurityException.objects.filter(
+                    ref_id=token, folder_id=folder_id
+                ).first()
+                or SecurityException.objects.filter(
+                    name=token, folder_id=folder_id
+                ).first()
+            )
             if obj:
                 security_exceptions.append(obj.id)
             else:
                 return {}, Error(
                     record=record,
-                    error=f"No security exception named '{se_name}' found in folder",
+                    error=f"No security exception named '{token}' found in folder",
                 )
 
         data = {
