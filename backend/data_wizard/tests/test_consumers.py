@@ -544,7 +544,7 @@ class TestSecurityExceptionConsumer:
     def test_status_normalization(self, base_context):
         consumer = SecurityExceptionRecordConsumer(base_context)
         record_data, _ = consumer.prepare_create(
-            {"name": "X", "status": "in_review"}, None
+            {"name": "X", "status": "in review"}, None
         )
         assert record_data["status"] == "in_review"
 

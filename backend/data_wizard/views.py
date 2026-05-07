@@ -320,7 +320,9 @@ def _resolve_vulnerabilities(value, folder) -> tuple[list[UUID], list[str]]:
         try:
             vuln = (
                 Vulnerability.objects.filter(ref_id=token, folder=folder).first()
-                or Vulnerability.objects.filter(name=token, folder=folder).first()
+                or Vulnerability.objects.filter(
+                    name__iexact=token, folder=folder
+                ).first()
             )
             if vuln is None:
                 vuln = Vulnerability.objects.create(name=token, folder=folder)
@@ -1701,7 +1703,7 @@ class VulnerabilityRecordConsumer(RecordConsumer[None]):
                 continue
             candidates = list(
                 AppliedControl.objects.filter(
-                    Q(ref_id=token) | Q(name=token), folder_id=folder_id
+                    Q(ref_id=token) | Q(name__iexact=token), folder_id=folder_id
                 )
             )
             obj = next(
@@ -1723,7 +1725,7 @@ class VulnerabilityRecordConsumer(RecordConsumer[None]):
                 continue
             candidates = list(
                 Asset.objects.filter(
-                    Q(ref_id=token) | Q(name=token), folder_id=folder_id
+                    Q(ref_id=token) | Q(name__iexact=token), folder_id=folder_id
                 )
             )
             obj = next(
@@ -1745,7 +1747,7 @@ class VulnerabilityRecordConsumer(RecordConsumer[None]):
                 continue
             candidates = list(
                 SecurityException.objects.filter(
-                    Q(ref_id=token) | Q(name=token), folder_id=folder_id
+                    Q(ref_id=token) | Q(name__iexact=token), folder_id=folder_id
                 )
             )
             obj = next(
