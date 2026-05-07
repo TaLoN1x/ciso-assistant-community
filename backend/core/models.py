@@ -26,8 +26,10 @@ from django.core.validators import (
 from django.core.files.storage import default_storage
 from django.db import models, transaction
 from django.db.models import F, Q, OuterRef, Subquery, Prefetch, Count
+from django.db.models.signals import pre_delete
 from django.db.models.query import QuerySet
 from django.forms.models import model_to_dict
+from django.dispatch import receiver
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import get_language
@@ -4341,13 +4343,6 @@ class Evidence(
         super().save(*args, **kwargs)
         self.revisions.update(is_published=self.is_published)
 
-    def delete(self, using=None, keep_parents=False):
-        for rev in self.revisions.all():
-            if rev.attachment:
-                rev.attachment.delete(save=False)
-
-        return super().delete(using=using, keep_parents=keep_parents)
-
     @property
     def last_revision(self):
         return self.revisions.order_by("-version").first() or None
@@ -4433,6 +4428,10 @@ class EvidenceRevision(AbstractBaseModel, FolderMixin):
 
     fields_to_check = ["evidence", "version"]
 
+    class Meta:
+        verbose_name = _("Evidence Revision")
+        verbose_name_plural = _("Evidence Revisions")
+
     def __str__(self):
         return f"{self.evidence.name} v{self.version}"
 
@@ -4480,7 +4479,6 @@ class EvidenceRevision(AbstractBaseModel, FolderMixin):
                             if hasattr(self.attachment, "seek"):
                                 self.attachment.seek(0)
                 except Exception as e:
-                    logger = get_logger(__name__)
                     logger.warning(
                         "Failed to compute attachment hash",
                         revision_id=self.pk,
@@ -4494,13 +4492,9 @@ class EvidenceRevision(AbstractBaseModel, FolderMixin):
 
         super().save(*args, **kwargs)
 
-    def delete(self, using=None, keep_parents=False):
-        if self.attachment:
-            self.attachment.delete(save=False)
-
-        return super().delete(using=using, keep_parents=keep_parents)
-
-    def filename(self):
+    def filename(self) -> str:
+        if self.attachment is None:
+            return ""
         return os.path.basename(self.attachment.name)
 
     def get_size(self):
@@ -4517,9 +4511,19 @@ class EvidenceRevision(AbstractBaseModel, FolderMixin):
         else:
             return f"{size / 1024 / 1024:.1f} MB"
 
-    class Meta:
-        verbose_name = _("Evidence Revision")
-        verbose_name_plural = _("Evidence Revisions")
+
+@receiver(pre_delete, sender=EvidenceRevision)
+def _delete_evidence_revision_attachment(sender, instance: EvidenceRevision, **kwargs):
+    if instance.attachment and instance.attachment.name:
+        try:
+            instance.attachment.delete(save=False)
+        except Exception as e:
+            logger.warning(
+                "Failed to delete evidence revision attachment",
+                revision_id=instance.pk,
+                evidence_name=instance.evidence.name,
+                error=str(e),
+            )
 
 
 class Incident(NameDescriptionMixin, FolderMixin, FilteringLabelMixin):
