@@ -2,7 +2,7 @@
 Integration tests for the LoadFileView HTTP endpoint.
 
 Endpoint: POST /api/data-wizard/load-file/
-Auth: force_authenticate via conftest api_client fixture
+Auth: force_authenticate
 File: raw body with Content-Disposition header (FileUploadParser)
 
 Key headers:
@@ -12,8 +12,8 @@ Key headers:
 
 Pattern mirrors tprm/test/test_views.py:
   - Real DRF request through the full view stack
-  - RBAC patched via the shared all_accessible fixture
-  - Asserts HTTP status code + response payload shape, not intermediate dicts
+  - Unit-layer classes: RBAC patched via all_accessible fixture
+  - RBAC-layer classes: real knox token + startup(), no RBAC patch
 """
 
 import pytest
@@ -517,3 +517,106 @@ class TestProcessingEndpoint:
         )
         resp = _post(api_client, excel.read(), "a.xlsx", "Processing", domain_folder.id)
         assert resp.json()["results"]["created"] == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Real auth + RBAC — no force_authenticate, no RBAC patching
+# Uses startup() to initialize roles/groups exactly as production does.
+# Mirrors app_tests/conftest.py authenticated_client pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestRealAuthAndRBAC:
+    """
+    Proves the full auth stack works end-to-end:
+      knox middleware → user resolution → IsAuthenticated → view → RBAC
+    No mocks or patches anywhere in this class.
+    """
+
+    def test_no_token_returns_401(self, app_ready, domain_folder):
+        """Missing Authorization header must be rejected before the view runs."""
+        from rest_framework.test import APIClient
+
+        anon = APIClient()
+        resp = _post(anon, _csv("name\nX\n"), "a.csv", "Asset", domain_folder.id)
+        assert resp.status_code in (401, 403)
+
+    def test_invalid_token_returns_401(self, app_ready, domain_folder):
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION="Token totally-invalid-token")
+        resp = _post(client, _csv("name\nX\n"), "a.csv", "Asset", domain_folder.id)
+        assert resp.status_code in (401, 403)
+
+    def test_admin_can_create_asset_with_knox_token(self, knox_admin_client, app_ready):
+        """
+        Real admin token (BI-UG-ADM group) can create an asset through the
+        real RBAC path without any patching.
+        """
+        folder = app_ready  # root folder returned by app_ready
+        resp = _post(
+            knox_admin_client,
+            _csv("name,ref_id\nKnox Asset,KNOX-001\n"),
+            "a.csv",
+            "Asset",
+            folder.id,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["results"]["created"] == 1
+        assert Asset.objects.filter(ref_id="KNOX-001").exists()
+
+    def test_admin_update_mode_sees_existing_record(self, knox_admin_client, app_ready):
+        """
+        With real RBAC, the admin's get_accessible_object_ids() returns the
+        existing record so UPDATE mode can find and patch it.
+        """
+        folder = app_ready
+        Asset.objects.create(
+            name="Existing", ref_id="KNOX-UPD", folder=folder, description="old"
+        )
+        resp = _post(
+            knox_admin_client,
+            _csv("name,ref_id,description\nExisting,KNOX-UPD,new\n"),
+            "a.csv",
+            "Asset",
+            folder.id,
+            HTTP_X_ON_CONFLICT="update",
+        )
+        assert resp.json()["results"]["updated"] == 1
+        assert Asset.objects.get(ref_id="KNOX-UPD").description == "new"
+
+    def test_restricted_user_cannot_update_hidden_record(
+        self, knox_restricted_client, app_ready
+    ):
+        """
+        find_existing() locates the record regardless of RBAC (it searches by
+        ref_id/name, not by viewable_ids).  The update is blocked one layer
+        deeper: BaseModelSerializer.update() calls _check_object_perm("change"),
+        which calls RoleAssignment.is_access_allowed() with the real request
+        user.  A user with no role assignments has no "change_asset" permission
+        on any folder, so PermissionDenied is raised → failed == 1, updated == 0,
+        and the record on disk is unchanged.
+
+        This test proves get_accessible_object_ids() / is_access_allowed() are
+        called with the real user and return real results — not a patched shortcut.
+        """
+        folder = app_ready
+        asset = Asset.objects.create(
+            name="Hidden Asset", ref_id="RBAC-001", folder=folder
+        )
+        resp = _post(
+            knox_restricted_client,
+            _csv("name,ref_id,description\nHidden Asset,RBAC-001,attempted update\n"),
+            "a.csv",
+            "Asset",
+            folder.id,
+            HTTP_X_ON_CONFLICT="update",
+        )
+        body = resp.json()
+        assert body["results"]["updated"] == 0
+        assert body["results"]["failed"] == 1
+        asset.refresh_from_db()
+        assert asset.description is None

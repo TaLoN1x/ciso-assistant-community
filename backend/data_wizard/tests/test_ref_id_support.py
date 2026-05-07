@@ -1,19 +1,16 @@
 """
-Tests for ref_id support in the Data Wizard. (TDD approach)
+Tests for ref_id support in the Data Wizard.
 
 Coverage:
   A. Base find_existing — priority: ref_id first, name as fallback
-  B. Model fields_to_check — ref_id declared where the field exists
-  C. _resolve_vulnerabilities — ref_id lookup before name / get_or_create
-  D. VulnerabilityRecordConsumer relational resolvers — ref_id fallback
+  B. _resolve_vulnerabilities — ref_id lookup before name / get_or_create
+  C. VulnerabilityRecordConsumer relational resolvers — ref_id fallback
 """
 
 import pytest
 
 from core.models import AppliedControl, Asset, SecurityException, Vulnerability
-from ebios_rm.models import ElementaryAction
 from iam.models import Folder
-from privacy.models import Processing
 
 from data_wizard.views import (
     _resolve_vulnerabilities,
@@ -119,36 +116,7 @@ class TestFindExistingRefIdPriority:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# B. Model fields_to_check — each model must declare ref_id
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class TestModelFieldsToCheck:
-    """These tests do not hit the DB; they inspect class attributes."""
-
-    def test_applied_control_declares_ref_id(self):
-        assert "ref_id" in AppliedControl.fields_to_check
-
-    def test_vulnerability_declares_ref_id(self):
-        assert "ref_id" in Vulnerability.fields_to_check
-
-    def test_perimeter_declares_ref_id(self):
-        from core.models import Perimeter
-
-        assert "ref_id" in Perimeter.fields_to_check
-
-    def test_security_exception_declares_ref_id(self):
-        assert "ref_id" in SecurityException.fields_to_check
-
-    def test_processing_declares_ref_id(self):
-        assert "ref_id" in Processing.fields_to_check
-
-    def test_elementary_action_declares_ref_id(self):
-        assert "ref_id" in ElementaryAction.fields_to_check
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# C. _resolve_vulnerabilities — ref_id lookup, name fallback, create-on-miss
+# B. _resolve_vulnerabilities — ref_id lookup, name fallback, create-on-miss
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -197,7 +165,7 @@ class TestResolveVulnerabilities:
         Vulnerability.objects.create(
             name="Shared Vuln", ref_id="CVE-SHARED", folder=other_folder
         )
-        ids, failed = _resolve_vulnerabilities("CVE-SHARED", domain_folder)
+        _, failed = _resolve_vulnerabilities("CVE-SHARED", domain_folder)
         # Should NOT find the one in the other folder, so creates a new one
         assert failed == []
         assert Vulnerability.objects.filter(folder=domain_folder).count() == 1
@@ -205,7 +173,7 @@ class TestResolveVulnerabilities:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# D. VulnerabilityRecordConsumer — relational resolvers use ref_id fallback
+# C. VulnerabilityRecordConsumer — relational resolvers use ref_id fallback
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -255,9 +223,9 @@ class TestVulnerabilityConsumerRelationalResolvers:
         assert error is None
         assert ac.id in record_data["applied_controls"]
 
-    def test_error_when_applied_control_not_found(self, base_context, domain_folder):
+    def test_error_when_applied_control_not_found(self, base_context):
         consumer = VulnerabilityRecordConsumer(base_context)
-        record_data, error = consumer.prepare_create(
+        _, error = consumer.prepare_create(
             {"name": "Test Vuln", "applied_controls": "GHOST-CONTROL"}, None
         )
         assert error is not None

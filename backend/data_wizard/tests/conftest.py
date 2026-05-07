@@ -6,8 +6,10 @@ import io
 import pytest
 from unittest.mock import MagicMock, patch
 from rest_framework.test import APIClient
+from knox.models import AuthToken
 
-from iam.models import Folder, User
+from core.apps import startup
+from iam.models import Folder, User, UserGroup
 from data_wizard.views import BaseContext, ConflictMode
 
 
@@ -104,6 +106,51 @@ def update_context(domain_folder, admin_user):
         folders_map={},
         on_conflict=ConflictMode.UPDATE,
     )
+
+
+@pytest.fixture
+def app_ready(db):
+    """Initialize application state (roles, groups, root folder) via startup()."""
+    startup(sender=None)
+    return Folder.objects.get(content_type=Folder.ContentType.ROOT)
+
+
+@pytest.fixture
+def knox_admin_client(app_ready):
+    """
+    Authenticated APIClient using a real knox token.
+    The user is added to the BI-UG-ADM superuser group created by startup(),
+    giving it full RBAC access across all folders — no RBAC patching needed.
+    """
+    admin = User.objects.create_superuser(
+        "knox-admin@datawizard.test", is_published=True
+    )
+    admin_group = UserGroup.objects.get(name="BI-UG-ADM")
+    admin.folder = admin_group.folder
+    admin.save()
+    admin_group.user_set.add(admin)
+
+    client = APIClient()
+    _, token = AuthToken.objects.create(user=admin)
+    client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+    return client
+
+
+@pytest.fixture
+def knox_restricted_client(app_ready, root_folder):
+    """
+    Authenticated APIClient for a user with NO role assignments.
+    get_accessible_object_ids() returns [] for this user — used to prove
+    RBAC filtering is real and not a patch artifact.
+    """
+    user = User.objects.create_user("restricted@datawizard.test", is_published=True)
+    user.folder = root_folder
+    user.save()
+
+    client = APIClient()
+    _, token = AuthToken.objects.create(user=user)
+    client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+    return client
 
 
 # ─────────────────────────────────────────────────────────────────────────────
