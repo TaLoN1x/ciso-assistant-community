@@ -307,6 +307,30 @@ class TestReadStripPerRole:
         assert resp.status_code == 200
         assert "answers" in resp.json()
 
+    def test_ca_tree_endpoint_emits_per_ra_viewer_role(self, viewer_role_api_setup):
+        """The CA tree feeds the third-party tree-view lead badges. Each node
+        must carry its own `viewer_role` so the frontend can suppress badges
+        (e.g. `extended_result`) on RAs the viewer is a respondent for while
+        leaving them visible on neighbouring auditor-only RAs."""
+        s = viewer_role_api_setup
+        client = _client_for(s["alice"])
+        resp = client.get(f"/api/compliance-assessments/{s['ca'].id}/tree/")
+        assert resp.status_code == 200
+
+        def walk(tree):
+            for n in tree.values():
+                if n.get("ra_id"):
+                    yield n
+                for child in (n.get("children") or {}).values():
+                    if child.get("ra_id"):
+                        yield child
+                    yield from walk(child.get("children") or {})
+
+        nodes_by_ra = {n["ra_id"]: n for n in walk(resp.json())}
+        assert nodes_by_ra[str(s["ra_1"].id)]["viewer_role"] == "respondent"
+        assert nodes_by_ra[str(s["ra_2"].id)]["viewer_role"] == "respondent"
+        assert nodes_by_ra[str(s["ra_3"].id)]["viewer_role"] == "auditor"
+
     def test_respondent_patch_of_extended_result_is_dropped(
         self, viewer_role_api_setup
     ):

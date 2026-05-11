@@ -12355,6 +12355,13 @@ class ComplianceAssessmentViewSet(BaseModelViewSet):
                 ra for ra in requirement_assessments if ra.id in ra_ids
             ]
 
+        # Per-RA viewer role so the frontend can hide tree badges (e.g.
+        # extended_result) for RAs the viewer is a respondent on while still
+        # showing them for RAs they audit in the same CA.
+        from core.utils import get_respondent_ra_ids
+
+        respondent_ra_ids = get_respondent_ra_ids(request.user, compliance_assessment)
+
         requirement_nodes = list(
             RequirementNode.objects.filter(framework=_framework)
             .select_related("framework")
@@ -12379,6 +12386,7 @@ class ComplianceAssessmentViewSet(BaseModelViewSet):
             requirement_nodes,
             requirement_assessments,
             _framework.max_score,
+            respondent_ra_ids=respondent_ra_ids,
         )
         implementation_groups = compliance_assessment.selected_implementation_groups
         if (

@@ -25,6 +25,7 @@
 		complianceStatusColorMap,
 		extendedResultColorMap
 	} from '$lib/utils/constants';
+	import { isFieldVisible } from '$lib/utils/helpers';
 
 	import DonutChart from '$lib/components/Chart/DonutChart.svelte';
 	import RingProgress from '$lib/components/DataViz/RingProgress.svelte';
@@ -242,7 +243,15 @@
 					showDocumentationScore: data.compliance_assessment.show_documentation_score,
 					max_score: node.max_score,
 					progressStatusEnabled: data.compliance_assessment.progress_status_enabled,
-					extendedResultEnabled: data.compliance_assessment.extended_result_enabled,
+					// Per-RA visibility: hide the badge when the viewer cannot see
+					// `extended_result` on this RA, even if the CA enables it globally.
+					extendedResultEnabled:
+						data.compliance_assessment.extended_result_enabled &&
+						isFieldVisible(
+							data.compliance_assessment,
+							'extended_result',
+							node.viewer_role === 'respondent' ? 'respondent' : 'auditor'
+						),
 					extendedResult: node.extended_result,
 					extendedResultColor: extendedResultColorMap[node.extended_result]
 				},

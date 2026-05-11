@@ -243,12 +243,18 @@ def get_sorted_requirement_nodes(
     requirement_nodes: list,
     requirements_assessed: Optional[list] = None,
     max_score: int = 0,
+    respondent_ra_ids: Optional[set] = None,
 ) -> dict:
     """
     Recursive function to build framework groups tree
     requirement_nodes: the list of all requirement_nodes
     requirements_assessed: the list of all requirements_assessed
     max_score: the maximum score. This is an attribute of the framework
+    respondent_ra_ids: optional set of RA IDs the viewer is a respondent on.
+        When provided, each node gets a per-RA `viewer_role` so the frontend
+        can apply field-visibility gating (e.g. hiding `extended_result` from
+        the tree badge for respondents whose role is `auditor_only` for it).
+        Default `auditor` when the RA id is not in the set.
     Returns a dictionary containing key=name and value={"description": description, "style": "leaf|node"}}
     Values are correctly sorted based on order_id
     If order_id is missing, sorting is based on created_at
@@ -273,6 +279,14 @@ def get_sorted_requirement_nodes(
     # Sort children nodes by order_id
     for key in children_dict:
         children_dict[key].sort(key=lambda x: x.order_id)
+
+    def _viewer_role_for(req_as) -> Optional[str]:
+        # Only emit `viewer_role` when the caller passes a respondent set —
+        # legacy callers that don't care about field-visibility get `None`
+        # and the frontend continues to treat the node as auditor.
+        if respondent_ra_ids is None or req_as is None:
+            return None
+        return "respondent" if req_as.id in respondent_ra_ids else "auditor"
 
     def get_sorted_requirement_nodes_rec(start: list) -> dict:
         """
@@ -311,6 +325,7 @@ def get_sorted_requirement_nodes(
                 "style": "node",
                 "assessable": node.assessable,
                 "description": get_referential_translation(node, "description"),
+                "viewer_role": _viewer_role_for(req_as),
                 "children": {},
             }
 
@@ -362,6 +377,7 @@ def get_sorted_requirement_nodes(
                     "result_i18n": camel_case(child_req_as.result)
                     if child_req_as and child_req_as.result is not None
                     else None,
+                    "viewer_role": _viewer_role_for(child_req_as),
                     "style": "leaf",
                 }
 

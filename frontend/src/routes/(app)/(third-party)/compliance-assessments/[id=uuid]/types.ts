@@ -13,4 +13,5 @@ export interface Node {
 	score?: number; // Assuming that the score field exists in nodes similar to leaves
 	is_scored?: boolean; // Assuming that the is_scored field exists in nodes similar to leaves
 	weight?: number; // Weight multiplier for score calculations
+	viewer_role?: 'auditor' | 'respondent'; // Per-RA role resolved by the backend from Actor membership
 }
