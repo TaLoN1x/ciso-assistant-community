@@ -231,8 +231,15 @@ class TestPerRaWriteEnforcement:
         """Same user, same CA, but on an RA where they are auditor — score
         persists because the respondent stripping doesn't fire."""
         s = viewer_role_api_setup
-        # Make sure score is editable in the read serializer too so the user
-        # can verify the change. Auditor default for `score` is `edit`.
+        # Pin the CA's field_visibility explicitly so the assertion exercises
+        # the per-RA role behaviour rather than relying on DEFAULT_VISIBILITY:
+        # auditor can edit score / is_scored, respondent cannot.
+        s["ca"].field_visibility = {
+            "score": {"auditor": "edit", "respondent": "hidden"},
+            "is_scored": {"auditor": "edit", "respondent": "hidden"},
+        }
+        s["ca"].save(update_fields=["field_visibility"])
+
         client = _client_for(s["alice"])
 
         resp = client.patch(
