@@ -56,8 +56,10 @@ from .base_models import (
     NameDescriptionMixin,
 )
 from .utils import (
+    aggregate_compute_results,
     camel_case,
     is_compute_result_truthy,
+    resolve_compute_result,
     sha256,
     update_selected_implementation_groups,
     _is_question_visible,
@@ -8280,7 +8282,6 @@ class RequirementAssessment(AbstractBaseModel, FolderMixin, ETADueDateMixin):
         visible_questions = 0
         answered_visible_questions = 0
         is_score_computed = False
-        is_result_computed = False
 
         # Determine aggregation method
         scores_def = self.compliance_assessment.scores_definition
@@ -8315,8 +8316,9 @@ class RequirementAssessment(AbstractBaseModel, FolderMixin, ETADueDateMixin):
                         total_weight += question.weight
 
                     if choice.compute_result is not None:
-                        is_result_computed = True
-                        results.append(is_compute_result_truthy(choice.compute_result))
+                        resolved = resolve_compute_result(choice.compute_result)
+                        if resolved is not None:
+                            results.append(resolved)
 
         if is_score_computed:
             if aggregation == "mean" and total_weight > 0:
@@ -8335,12 +8337,15 @@ class RequirementAssessment(AbstractBaseModel, FolderMixin, ETADueDateMixin):
             new_result = self.Result.NOT_ASSESSED
         elif not results:
             new_result = self.Result.NOT_ASSESSED
-        elif all(results):
-            new_result = self.Result.COMPLIANT
-        elif any(results):
-            new_result = self.Result.PARTIALLY_COMPLIANT
         else:
-            new_result = self.Result.NON_COMPLIANT
+            aggregated = aggregate_compute_results(results)
+            result_map = {
+                "compliant": self.Result.COMPLIANT,
+                "partially_compliant": self.Result.PARTIALLY_COMPLIANT,
+                "non_compliant": self.Result.NON_COMPLIANT,
+                "not_applicable": self.Result.NOT_APPLICABLE,
+            }
+            new_result = result_map.get(aggregated, self.Result.NOT_ASSESSED)
 
         # Update attributes
         self.score = new_score

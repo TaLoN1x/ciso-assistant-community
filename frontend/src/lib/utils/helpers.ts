@@ -242,7 +242,7 @@ export function computeRequirementScoreAndResult(requirementAssessment: any, ans
 	let totalScore: number | null = 0;
 	const min_score = requirementAssessment.compliance_assessment.min_score || 0;
 	const max_score = requirementAssessment.compliance_assessment.max_score || 100;
-	let results: boolean[] | null = [];
+	const results: string[] = [];
 	let visibleCount = 0;
 	let answeredVisibleCount = 0;
 	let hasAnyScorableQuestions = false;
@@ -308,7 +308,8 @@ export function computeRequirementScoreAndResult(requirementAssessment: any, ans
 			}
 
 			if (selectedChoice.compute_result !== undefined && selectedChoice.compute_result !== null) {
-				results.push(!!selectedChoice.compute_result);
+				const resolved = resolveComputeResult(selectedChoice.compute_result);
+				if (resolved !== null) results.push(resolved);
 			}
 		}
 	}
@@ -329,14 +330,49 @@ export function computeRequirementScoreAndResult(requirementAssessment: any, ans
 	}
 
 	// Compute overall result
-	let result = hasAnyResultQuestions ? 'not_assessed' : null;
-	if (results?.length > 0) {
-		if (results.every((r) => r === true)) result = 'compliant';
-		else if (results.some((r) => r === true)) result = 'partially_compliant';
-		else result = 'non_compliant';
+	let result: string | null = hasAnyResultQuestions ? 'not_assessed' : null;
+	if (results.length > 0) {
+		const aggregated = aggregateComputeResults(results);
+		if (aggregated !== null) result = aggregated;
 	}
 
 	return { score: totalScore, result };
+}
+
+/**
+ * Map a QuestionChoice.compute_result string to a RequirementAssessment.Result value.
+ * Supports both legacy boolean literals and the framework builder's semantic values.
+ * Returns null when the choice should not contribute to the overall result.
+ */
+function resolveComputeResult(value: unknown): string | null {
+	if (value === null || value === undefined) return null;
+	// Legacy boolean storage (from older library YAMLs serialised as bool)
+	if (typeof value === 'boolean') return value ? 'compliant' : 'non_compliant';
+	if (typeof value !== 'string') return null;
+	const v = value.trim().toLowerCase();
+	if (v === '') return null;
+	if (v === 'true' || v === '1' || v === 'compliant') return 'compliant';
+	if (v === 'false' || v === '0' || v === 'non_compliant') return 'non_compliant';
+	if (v === 'partially_compliant') return 'partially_compliant';
+	if (v === 'not_applicable') return 'not_applicable';
+	return 'compliant';
+}
+
+function aggregateComputeResults(resolved: string[]): string | null {
+	const contributing = resolved.filter((r) => r !== null && r !== undefined);
+	if (contributing.length === 0) return null;
+
+	// not_applicable is a veto: a single selected choice flagged as not_applicable
+	// forces the whole requirement to not_applicable (supports scoping questions).
+	if (contributing.some((r) => r === 'not_applicable')) return 'not_applicable';
+
+	const hasCompliant = contributing.some((r) => r === 'compliant');
+	const hasNonCompliant = contributing.some((r) => r === 'non_compliant');
+	const hasPartial = contributing.some((r) => r === 'partially_compliant');
+
+	if (hasPartial || (hasCompliant && hasNonCompliant)) return 'partially_compliant';
+	if (hasNonCompliant) return 'non_compliant';
+	return 'compliant';
 }
 
 /**

@@ -35,8 +35,74 @@ def extract_node_id(urn: str | None) -> str | None:
 
 
 def is_compute_result_truthy(compute_result: str | None) -> bool:
-    """Return True if a QuestionChoice.compute_result value is truthy."""
+    """Return True if a QuestionChoice.compute_result value is truthy.
+
+    Kept for legacy boolean export (e.g. build_questions_dict). For assessment
+    recomputation, use resolve_compute_result which returns a semantic Result.
+    """
     return compute_result is not None and compute_result not in ("false", "0", "")
+
+
+def resolve_compute_result(compute_result: str | None) -> str | None:
+    """Map a QuestionChoice.compute_result string to a RequirementAssessment.Result value.
+
+    Supports both legacy boolean literals ("true"/"false"/"1"/"0") and the
+    semantic values produced by the framework builder UI ("compliant",
+    "non_compliant", "partially_compliant", "not_applicable").
+
+    Returns None when the choice should not contribute to the overall result
+    (i.e. compute_result is None or an empty string).
+    """
+    if compute_result is None:
+        return None
+    value = compute_result.strip().lower()
+    if value == "":
+        return None
+    if value in ("true", "1", "compliant"):
+        return "compliant"
+    if value in ("false", "0", "non_compliant"):
+        return "non_compliant"
+    if value == "partially_compliant":
+        return "partially_compliant"
+    if value == "not_applicable":
+        return "not_applicable"
+    # Unknown values: treat as compliant for backward compatibility with the
+    # historical "any non-falsy string is truthy" behaviour.
+    return "compliant"
+
+
+def aggregate_compute_results(resolved_results: list[str | None]) -> str | None:
+    """Aggregate a list of resolved compute_result values into a single Result.
+
+    Semantics of the special values:
+    - None: neutral, does not contribute (e.g. compute_result was empty/null).
+    - "not_applicable": veto — as soon as one selected choice carries this
+      value, the whole requirement is marked not_applicable. This supports
+      scoping questions like "Do you process personal data? -> No" that flag
+      the requirement as out of scope.
+    - "compliant" / "non_compliant" / "partially_compliant": normal
+      contributions aggregated worst-wins.
+
+    Returns one of "compliant", "partially_compliant", "non_compliant",
+    "not_applicable", or None if no value should be derived (caller decides
+    whether that becomes NOT_ASSESSED).
+    """
+    contributing = [r for r in resolved_results if r is not None]
+    if not contributing:
+        return None
+
+    if any(r == "not_applicable" for r in contributing):
+        return "not_applicable"
+
+    has_compliant = any(r == "compliant" for r in contributing)
+    has_non_compliant = any(r == "non_compliant" for r in contributing)
+    has_partial = any(r == "partially_compliant" for r in contributing)
+
+    if has_partial or (has_compliant and has_non_compliant):
+        return "partially_compliant"
+    if has_non_compliant:
+        return "non_compliant"
+    return "compliant"
 
 
 # Currency formatting conventions: (position, space)
