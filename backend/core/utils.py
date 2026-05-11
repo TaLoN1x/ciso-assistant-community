@@ -34,15 +34,6 @@ def extract_node_id(urn: str | None) -> str | None:
     return node_id if node_id else None
 
 
-def is_compute_result_truthy(compute_result: str | None) -> bool:
-    """Return True if a QuestionChoice.compute_result value is truthy.
-
-    Kept for legacy boolean export (e.g. build_questions_dict). For assessment
-    recomputation, use resolve_compute_result which returns a semantic Result.
-    """
-    return compute_result is not None and compute_result not in ("false", "0", "")
-
-
 def resolve_compute_result(compute_result: str | None) -> str | None:
     """Map a QuestionChoice.compute_result string to a RequirementAssessment.Result value.
 
@@ -66,9 +57,13 @@ def resolve_compute_result(compute_result: str | None) -> str | None:
         return "partially_compliant"
     if value == "not_applicable":
         return "not_applicable"
-    # Unknown values: treat as compliant for backward compatibility with the
-    # historical "any non-falsy string is truthy" behaviour.
-    return "compliant"
+    # Unknown values do not contribute to the aggregated result. Surfacing a
+    # warning rather than silently treating them as compliant prevents typos
+    # in framework YAMLs from inflating compliance scores.
+    logger.warning(
+        "Unknown compute_result value ignored", compute_result=compute_result
+    )
+    return None
 
 
 def aggregate_compute_results(resolved_results: list[str | None]) -> str | None:
@@ -1043,9 +1038,9 @@ def build_questions_dict(node):
             if choice.add_score is not None:
                 choice_data["add_score"] = choice.add_score
             if choice.compute_result is not None:
-                choice_data["compute_result"] = is_compute_result_truthy(
-                    choice.compute_result
-                )
+                resolved = resolve_compute_result(choice.compute_result)
+                if resolved is not None:
+                    choice_data["compute_result"] = resolved
             if choice.description:
                 choice_data["description"] = choice.description
             if choice.color:

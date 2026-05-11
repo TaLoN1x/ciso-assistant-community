@@ -58,7 +58,6 @@ from .base_models import (
 from .utils import (
     aggregate_compute_results,
     camel_case,
-    is_compute_result_truthy,
     resolve_compute_result,
     sha256,
     update_selected_implementation_groups,
@@ -2556,9 +2555,9 @@ class RequirementNode(ReferentialObjectMixin, I18nObjectMixin):
             if choice.add_score is not None:
                 choice_data["add_score"] = choice.add_score
             if choice.compute_result is not None:
-                choice_data["compute_result"] = is_compute_result_truthy(
-                    choice.compute_result
-                )
+                resolved = resolve_compute_result(choice.compute_result)
+                if resolved is not None:
+                    choice_data["compute_result"] = resolved
             if choice.color:
                 choice_data["color"] = choice.color
             if choice.select_implementation_groups:

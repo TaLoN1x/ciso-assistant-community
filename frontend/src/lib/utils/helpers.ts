@@ -355,7 +355,11 @@ function resolveComputeResult(value: unknown): string | null {
 	if (v === 'false' || v === '0' || v === 'non_compliant') return 'non_compliant';
 	if (v === 'partially_compliant') return 'partially_compliant';
 	if (v === 'not_applicable') return 'not_applicable';
-	return 'compliant';
+	// Unknown values don't contribute. Surfacing the warning helps catch typos
+	// or future-added values that haven't been wired up yet, instead of silently
+	// inflating compliance.
+	console.warn(`Unknown compute_result value ignored: "${value}"`);
+	return null;
 }
 
 function aggregateComputeResults(resolved: string[]): string | null {

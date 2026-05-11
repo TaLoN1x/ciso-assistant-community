@@ -800,6 +800,14 @@ class TestResolveComputeResult:
         assert resolve_compute_result("") is None
         assert resolve_compute_result("   ") is None
 
+    def test_resolve_unknown_value_returns_none(self):
+        """Unknown values must not silently coerce to compliant — they don't contribute."""
+        from core.utils import resolve_compute_result
+
+        assert resolve_compute_result("complient") is None  # typo
+        assert resolve_compute_result("yes") is None
+        assert resolve_compute_result("custom_value") is None
+
     def test_aggregate_worst_wins(self):
         from core.utils import aggregate_compute_results
 
