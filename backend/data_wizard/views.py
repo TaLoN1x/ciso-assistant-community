@@ -1,8 +1,8 @@
 import io
 import logging
+import structlog
 from types import MappingProxyType
 import re
-from types import MappingProxyType
 import pandas as pd
 from rest_framework import status
 from rest_framework.views import APIView
@@ -108,7 +108,7 @@ from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 import enum
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def resolve_container_name(request, default_prefix: str) -> str:
@@ -170,15 +170,17 @@ def normalize_datetime_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _parse_date(value: datetime | str | int | bool | None) -> Optional[str]:
+def _parse_date(value: "datetime | date | str | int | bool | None") -> Optional[str]:
     """Normalize a value to a YYYY-MM-DD string for DRF DateField."""
     if not value or value == "":
         return None
-    if isinstance(value, datetime):
+    if isinstance(value, datetime):  # datetime first — it is a subclass of date
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, date):
         return value.strftime("%Y-%m-%d")
     if isinstance(value, str) and "T" in value:
         return value.split("T")[0]
-    return value
+    return str(value)
 
 
 def _parse_datetime(value) -> Optional[str]:
@@ -1645,8 +1647,8 @@ class TaskTemplateRecordConsumer(RecordConsumer[None]):
     def _resolve_m2m_by_name(model: type[models.Model], raw: str) -> list[UUID]:
         """Resolve comma-separated names to model IDs.
 
-        Falls back to matching ``str(obj)`` for models like RiskAssessment whose
-        ``__str__`` returns ``"{name} - {version}"`` rather than just the name field.
+        For RiskAssessment, falls back to matching ``str(obj)`` because its
+        ``__str__`` returns ``"{name} - {version}"`` rather than just the name.
         Unresolvable entries are skipped with a log warning.
         """
         ids = set()
@@ -1655,7 +1657,7 @@ class TaskTemplateRecordConsumer(RecordConsumer[None]):
             if not entry:
                 continue
             obj = model.objects.filter(name__iexact=entry).first()
-            if obj is None:
+            if obj is None and model is RiskAssessment:
                 name_part = entry.rsplit(" - ", 1)[0].strip()
                 for candidate in model.objects.filter(name__iexact=name_part):
                     if str(candidate) == entry:
@@ -1701,36 +1703,45 @@ class TaskTemplateRecordConsumer(RecordConsumer[None]):
         if freq and interval_raw:
             try:
                 interval = int(interval_raw)
-                schedule = {"frequency": freq, "interval": interval}
-                for opt_key, col in [
-                    ("end_date", "schedule_end_date"),
-                    ("overdue_behavior", "schedule_overdue_behavior"),
-                    ("occurrences", "schedule_occurrences"),
-                ]:
-                    raw_val = str(record.get(col) or "").strip()
-                    if raw_val:
-                        if opt_key == "occurrences":
-                            try:
-                                schedule[opt_key] = int(raw_val)
-                            except (ValueError, TypeError):
-                                pass
-                        else:
-                            schedule[opt_key] = raw_val
-                for opt_key, col in [
-                    ("days_of_week", "schedule_days_of_week"),
-                    ("weeks_of_month", "schedule_weeks_of_month"),
-                    ("months_of_year", "schedule_months_of_year"),
-                ]:
-                    raw_val = str(record.get(col) or "").strip()
-                    if raw_val:
-                        try:
-                            schedule[opt_key] = [
-                                int(v.strip()) for v in raw_val.split(",") if v.strip()
-                            ]
-                        except (ValueError, TypeError):
-                            pass
             except (ValueError, TypeError):
-                pass
+                return {}, Error(
+                    record=record,
+                    error=f"Invalid schedule_interval value: '{interval_raw}'",
+                )
+            schedule = {"frequency": freq, "interval": interval}
+            for opt_key, col in [
+                ("end_date", "schedule_end_date"),
+                ("overdue_behavior", "schedule_overdue_behavior"),
+                ("occurrences", "schedule_occurrences"),
+            ]:
+                raw_val = str(record.get(col) or "").strip()
+                if raw_val:
+                    if opt_key == "occurrences":
+                        try:
+                            schedule[opt_key] = int(raw_val)
+                        except (ValueError, TypeError):
+                            return {}, Error(
+                                record=record,
+                                error=f"Invalid schedule_occurrences value: '{raw_val}'",
+                            )
+                    else:
+                        schedule[opt_key] = raw_val
+            for opt_key, col in [
+                ("days_of_week", "schedule_days_of_week"),
+                ("weeks_of_month", "schedule_weeks_of_month"),
+                ("months_of_year", "schedule_months_of_year"),
+            ]:
+                raw_val = str(record.get(col) or "").strip()
+                if raw_val:
+                    try:
+                        schedule[opt_key] = [
+                            int(v.strip()) for v in raw_val.split(",") if v.strip()
+                        ]
+                    except (ValueError, TypeError):
+                        return {}, Error(
+                            record=record,
+                            error=f"Invalid {col} value: '{raw_val}' (expected comma-separated integers)",
+                        )
 
         data: dict = {
             "ref_id": record.get("ref_id") or "",
@@ -3267,7 +3278,7 @@ class LoadFileView(APIView):
         summary_sheet = "Summary" if "Summary" in sheet_names else sheet_names[0]
 
         summary_df = normalize_datetime_columns(
-            pd.read_excel(excel_file, sheet_name=summary_sheet)
+            pd.read_excel(excel_data, sheet_name=summary_sheet)
         ).fillna("")
         summary_records = summary_df.to_dict(orient="records")
 
@@ -3327,7 +3338,8 @@ class LoadFileView(APIView):
             if template is None:
                 name_hint = sheet_name[dash_pos + 1 :].strip()
                 template = TaskTemplate.objects.filter(
-                    name__istartswith=name_hint
+                    name__istartswith=name_hint,
+                    folder_id=folder_id,
                 ).first()
 
             if template is None:
@@ -3340,7 +3352,7 @@ class LoadFileView(APIView):
                 continue
 
             sheet_df = normalize_datetime_columns(
-                pd.read_excel(excel_file, sheet_name=sheet_name)
+                pd.read_excel(excel_data, sheet_name=sheet_name)
             ).fillna("")
 
             for row in sheet_df.to_dict(orient="records"):
@@ -3380,6 +3392,7 @@ class LoadFileView(APIView):
                                     ),
                                 )
                             )
+                            task_nodes_result.stopped = True
                             break
                         case ConflictMode.UPDATE:
                             existing_node.status = status_val
@@ -3417,6 +3430,9 @@ class LoadFileView(APIView):
                         )
                         continue
                     task_nodes_result.add_created()
+
+            if task_nodes_result.stopped:
+                break
 
         overall_results["task_nodes"] = task_nodes_result.to_dict()
         return overall_results

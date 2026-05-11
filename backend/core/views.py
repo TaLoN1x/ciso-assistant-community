@@ -16759,10 +16759,10 @@ class TaskTemplateViewSet(ExportMixin, BaseModelViewSet):
                 .order_by("due_date")
             )
 
+            template_counter += 1
+
             if not task_nodes.exists():
                 continue
-
-            template_counter += 1
             task_name = obj.name or f"Template_{obj.pk}"
             # Format: "1-task_name", "2-task_name", etc.
             base_name = f"{template_counter}-{task_name}"
