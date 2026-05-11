@@ -848,7 +848,7 @@
 														/>
 													{/if}
 												{/if}
-											{:else if complianceAssessment.scoring_enabled && complianceAssessment.show_documentation_score && fieldVis.showDocumentationScore && requirementAssessment.is_scored}
+											{:else if fieldVis.showScore && complianceAssessment.scoring_enabled && complianceAssessment.show_documentation_score && fieldVis.showDocumentationScore && requirementAssessment.is_scored}
 												<div class="flex flex-row items-center space-x-2 w-full">
 													<span>{m.implementationScoreResult()}</span>
 													<div class="relative">
@@ -899,7 +899,7 @@
 														</Progress>
 													</div>
 												</div>
-											{:else if complianceAssessment.scoring_enabled && requirementAssessment.is_scored}
+											{:else if fieldVis.showScore && complianceAssessment.scoring_enabled && requirementAssessment.is_scored}
 												<div class="flex flex-row items-center space-x-2 w-full">
 													<span>{m.scoreResult()}</span>
 													<div class="relative">
@@ -921,6 +921,36 @@
 															<div class="absolute inset-0 flex items-center justify-center">
 																<span class="text-xs font-bold"
 																	>{requirementAssessment.score ?? '--'}</span
+																>
+															</div>
+														</Progress>
+													</div>
+												</div>
+											{:else if complianceAssessment.scoring_enabled && complianceAssessment.show_documentation_score && fieldVis.showDocumentationScore && requirementAssessment.is_scored}
+												<!-- Score is hidden for this viewer but documentation_score is not —
+													render only the doc score so `requirementAssessment.score` is not
+													exposed via the read-only display. -->
+												<div class="flex flex-row items-center space-x-2 w-full">
+													<span>{m.documentationScoreResult()}</span>
+													<div class="relative">
+														<Progress
+															value={(requirementAssessment.documentation_score * 100) /
+																complianceAssessment.max_score}
+															min={0}
+															max={100}
+														>
+															<Progress.Circle class="[--size:--spacing(10)]">
+																<Progress.CircleTrack />
+																<Progress.CircleRange
+																	class={displayScoreColor(
+																		requirementAssessment.documentation_score,
+																		complianceAssessment.max_score
+																	)}
+																/>
+															</Progress.Circle>
+															<div class="absolute inset-0 flex items-center justify-center">
+																<span class="text-xs font-bold"
+																	>{requirementAssessment.documentation_score ?? '--'}</span
 																>
 															</div>
 														</Progress>
