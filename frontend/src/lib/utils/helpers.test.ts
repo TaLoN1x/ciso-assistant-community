@@ -73,6 +73,25 @@ describe('getFieldVisibility', () => {
 		expect(auditor.showDocumentationScore).toBe(false);
 	});
 
+	it('applies DEFAULT_VISIBILITY when the CA payload lacks a key', () => {
+		// Regression: legacy CAs (or any payload missing the per-field pair)
+		// must still hide `extended_result` / `status` from respondents, even
+		// though the explicit override isn't in `field_visibility`. Without
+		// this fallback the auditee-assessments page leaked `extended_result`.
+		const empty = getFieldVisibility(ca(), 'respondent');
+		expect(empty.showExtendedResult).toBe(false);
+		expect(empty.showStatus).toBe(false);
+		expect(empty.showScore).toBe(false);
+		expect(empty.showDocumentationScore).toBe(false);
+		expect(empty.showRespondentAlignment).toBe(false);
+
+		const auditorEmpty = getFieldVisibility(ca(), 'auditor');
+		expect(auditorEmpty.showExtendedResult).toBe(true);
+		expect(auditorEmpty.showStatus).toBe(true);
+		// score/documentation_score still HIDDEN for auditor by default.
+		expect(auditorEmpty.showScore).toBe(false);
+	});
+
 	it('treats fields without an explicit override as visible to everyone', () => {
 		// `answers` and `result` are not in DEFAULT_VISIBILITY, so they
 		// resolve to EVERYONE_EDIT for both roles unless the CA opts out.
@@ -96,16 +115,22 @@ describe('getFieldVisibility', () => {
 		expect(flags.showResult).toBe(true);
 	});
 
-	it('treats a null/undefined complianceAssessment as an empty visibility map', () => {
-		// A missing CA must not crash — every flag falls through to the
-		// permissive EVERYONE_EDIT default.
+	it('treats a null/undefined complianceAssessment like an empty visibility map', () => {
+		// A missing CA must not crash and must apply the same DEFAULT_VISIBILITY
+		// fallback as an empty payload.
 		const fromNull = getFieldVisibility(null, 'respondent');
 		const fromUndefined = getFieldVisibility(undefined, 'respondent');
 		const fromEmpty = getFieldVisibility(ca(), 'respondent');
 		expect(fromNull).toEqual(fromEmpty);
 		expect(fromUndefined).toEqual(fromEmpty);
+		// answers / result aren't in DEFAULT_VISIBILITY — they still resolve
+		// to EVERYONE_EDIT.
 		expect(fromNull.showAnswers).toBe(true);
 		expect(fromNull.showResult).toBe(true);
+		// status / extended_result ARE in DEFAULT_VISIBILITY — they must be
+		// hidden for respondents even with no CA payload.
+		expect(fromNull.showExtendedResult).toBe(false);
+		expect(fromNull.showStatus).toBe(false);
 	});
 
 	it('defaults the role argument to auditor', () => {

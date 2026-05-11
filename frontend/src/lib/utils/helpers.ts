@@ -368,18 +368,39 @@ export type RoleAccess = 'edit' | 'read' | 'hidden';
 export type VisibilityPair = { auditor: RoleAccess; respondent: RoleAccess };
 
 const EDIT_PAIR: VisibilityPair = { auditor: 'edit', respondent: 'edit' };
+const AUDITOR_ONLY_PAIR: VisibilityPair = { auditor: 'edit', respondent: 'hidden' };
+const HIDDEN_PAIR: VisibilityPair = { auditor: 'hidden', respondent: 'hidden' };
 
-/** Return the per-role visibility pair for a field. Missing → all roles edit. */
+// Mirror of backend `DEFAULT_VISIBILITY` (`backend/core/utils.py`). Used as a
+// fallback when a CA's `field_visibility` map is missing a key — e.g. legacy
+// CAs created before the seeding migration, or CAs cloned from a path that
+// didn't go through `build_initial_field_visibility`. Without this fallback
+// the frontend would expose `extended_result` and friends to respondents.
+const DEFAULT_VISIBILITY: Record<string, VisibilityPair> = {
+	score: HIDDEN_PAIR,
+	is_scored: HIDDEN_PAIR,
+	documentation_score: HIDDEN_PAIR,
+	status: AUDITOR_ONLY_PAIR,
+	extended_result: AUDITOR_ONLY_PAIR,
+	respondent_alignment: HIDDEN_PAIR
+};
+
+/** Return the per-role visibility pair for a field. Lookup order mirrors the
+ * backend resolver: explicit override → DEFAULT_VISIBILITY → EVERYONE_EDIT. */
 export function resolveFieldVisibility(
 	complianceAssessment: Record<string, any> | null | undefined,
 	fieldName: string
 ): VisibilityPair {
 	const raw = complianceAssessment?.field_visibility?.[fieldName];
-	if (!raw || typeof raw !== 'object') return { ...EDIT_PAIR };
-	return {
-		auditor: (raw.auditor as RoleAccess) ?? 'edit',
-		respondent: (raw.respondent as RoleAccess) ?? 'edit'
-	};
+	if (raw && typeof raw === 'object') {
+		return {
+			auditor: (raw.auditor as RoleAccess) ?? 'edit',
+			respondent: (raw.respondent as RoleAccess) ?? 'edit'
+		};
+	}
+	const fallback = DEFAULT_VISIBILITY[fieldName];
+	if (fallback) return { ...fallback };
+	return { ...EDIT_PAIR };
 }
 
 function roleAccess(
