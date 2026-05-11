@@ -374,7 +374,9 @@ class TestSemanticComputeResult:
     behave as before.
     """
 
-    def _build_two_question_ra(self, folder, q1_choices, q2_choices, q1_type=None, q2_type=None):
+    def _build_two_question_ra(
+        self, folder, q1_choices, q2_choices, q1_type=None, q2_type=None
+    ):
         """Build a framework with two questions and the supplied choice specs.
 
         Each entry of q1_choices/q2_choices is a dict with keys: ref_id, value,
@@ -463,18 +465,30 @@ class TestSemanticComputeResult:
         ra, q1, q1_choices, q2, q2_choices = self._build_two_question_ra(
             folder,
             q1_choices=[
-                {"ref_id": "A", "value": "Non-compliant", "compute_result": "non_compliant"},
+                {
+                    "ref_id": "A",
+                    "value": "Non-compliant",
+                    "compute_result": "non_compliant",
+                },
                 {"ref_id": "B", "value": "Compliant", "compute_result": "compliant"},
             ],
             q2_choices=[
-                {"ref_id": "C", "value": "Non-compliant", "compute_result": "non_compliant"},
+                {
+                    "ref_id": "C",
+                    "value": "Non-compliant",
+                    "compute_result": "non_compliant",
+                },
                 {"ref_id": "D", "value": "Compliant", "compute_result": "compliant"},
             ],
         )
 
-        a1 = Answer.objects.create(requirement_assessment=ra, question=q1, folder=folder)
+        a1 = Answer.objects.create(
+            requirement_assessment=ra, question=q1, folder=folder
+        )
         a1.selected_choices.set([q1_choices[0]])  # non_compliant
-        a2 = Answer.objects.create(requirement_assessment=ra, question=q2, folder=folder)
+        a2 = Answer.objects.create(
+            requirement_assessment=ra, question=q2, folder=folder
+        )
         a2.selected_choices.set([q2_choices[0]])  # non_compliant
 
         ra.compute_score_and_result()
@@ -495,9 +509,13 @@ class TestSemanticComputeResult:
                 {"ref_id": "D", "value": "KO", "compute_result": "non_compliant"},
             ],
         )
-        a1 = Answer.objects.create(requirement_assessment=ra, question=q1, folder=folder)
+        a1 = Answer.objects.create(
+            requirement_assessment=ra, question=q1, folder=folder
+        )
         a1.selected_choices.set([q1_choices[0]])
-        a2 = Answer.objects.create(requirement_assessment=ra, question=q2, folder=folder)
+        a2 = Answer.objects.create(
+            requirement_assessment=ra, question=q2, folder=folder
+        )
         a2.selected_choices.set([q2_choices[0]])
 
         ra.compute_score_and_result()
@@ -517,9 +535,13 @@ class TestSemanticComputeResult:
                 {"ref_id": "D", "value": "KO", "compute_result": "non_compliant"},
             ],
         )
-        a1 = Answer.objects.create(requirement_assessment=ra, question=q1, folder=folder)
+        a1 = Answer.objects.create(
+            requirement_assessment=ra, question=q1, folder=folder
+        )
         a1.selected_choices.set([q1_choices[0]])  # compliant
-        a2 = Answer.objects.create(requirement_assessment=ra, question=q2, folder=folder)
+        a2 = Answer.objects.create(
+            requirement_assessment=ra, question=q2, folder=folder
+        )
         a2.selected_choices.set([q2_choices[1]])  # non_compliant
 
         ra.compute_score_and_result()
@@ -532,15 +554,23 @@ class TestSemanticComputeResult:
         ra, q1, q1_choices, q2, q2_choices = self._build_two_question_ra(
             folder,
             q1_choices=[
-                {"ref_id": "A", "value": "Mid", "compute_result": "partially_compliant"},
+                {
+                    "ref_id": "A",
+                    "value": "Mid",
+                    "compute_result": "partially_compliant",
+                },
             ],
             q2_choices=[
                 {"ref_id": "B", "value": "OK", "compute_result": "compliant"},
             ],
         )
-        a1 = Answer.objects.create(requirement_assessment=ra, question=q1, folder=folder)
+        a1 = Answer.objects.create(
+            requirement_assessment=ra, question=q1, folder=folder
+        )
         a1.selected_choices.set([q1_choices[0]])
-        a2 = Answer.objects.create(requirement_assessment=ra, question=q2, folder=folder)
+        a2 = Answer.objects.create(
+            requirement_assessment=ra, question=q2, folder=folder
+        )
         a2.selected_choices.set([q2_choices[0]])
 
         ra.compute_score_and_result()
@@ -564,9 +594,13 @@ class TestSemanticComputeResult:
                 {"ref_id": "B", "value": "KO", "compute_result": "non_compliant"},
             ],
         )
-        a1 = Answer.objects.create(requirement_assessment=ra, question=q1, folder=folder)
+        a1 = Answer.objects.create(
+            requirement_assessment=ra, question=q1, folder=folder
+        )
         a1.selected_choices.set([q1_choices[0]])
-        a2 = Answer.objects.create(requirement_assessment=ra, question=q2, folder=folder)
+        a2 = Answer.objects.create(
+            requirement_assessment=ra, question=q2, folder=folder
+        )
         a2.selected_choices.set([q2_choices[0]])
 
         ra.compute_score_and_result()
@@ -586,9 +620,13 @@ class TestSemanticComputeResult:
                 {"ref_id": "B", "value": "OK", "compute_result": "compliant"},
             ],
         )
-        a1 = Answer.objects.create(requirement_assessment=ra, question=q1, folder=folder)
+        a1 = Answer.objects.create(
+            requirement_assessment=ra, question=q1, folder=folder
+        )
         a1.selected_choices.set([q1_choices[0]])
-        a2 = Answer.objects.create(requirement_assessment=ra, question=q2, folder=folder)
+        a2 = Answer.objects.create(
+            requirement_assessment=ra, question=q2, folder=folder
+        )
         a2.selected_choices.set([q2_choices[0]])
 
         ra.compute_score_and_result()
@@ -607,9 +645,13 @@ class TestSemanticComputeResult:
                 {"ref_id": "B", "value": "N/A", "compute_result": "not_applicable"},
             ],
         )
-        a1 = Answer.objects.create(requirement_assessment=ra, question=q1, folder=folder)
+        a1 = Answer.objects.create(
+            requirement_assessment=ra, question=q1, folder=folder
+        )
         a1.selected_choices.set([q1_choices[0]])
-        a2 = Answer.objects.create(requirement_assessment=ra, question=q2, folder=folder)
+        a2 = Answer.objects.create(
+            requirement_assessment=ra, question=q2, folder=folder
+        )
         a2.selected_choices.set([q2_choices[0]])
 
         ra.compute_score_and_result()
@@ -628,17 +670,25 @@ class TestSemanticComputeResult:
             q1_choices=[
                 {"ref_id": "A", "value": "OK", "compute_result": "compliant"},
                 {"ref_id": "B", "value": "KO", "compute_result": "non_compliant"},
-                {"ref_id": "C", "value": "Mid", "compute_result": "partially_compliant"},
+                {
+                    "ref_id": "C",
+                    "value": "Mid",
+                    "compute_result": "partially_compliant",
+                },
             ],
             q2_choices=[
                 {"ref_id": "D", "value": "OK", "compute_result": "compliant"},
             ],
             q1_type=Question.Type.MULTIPLE_CHOICE,
         )
-        a1 = Answer.objects.create(requirement_assessment=ra, question=q1, folder=folder)
+        a1 = Answer.objects.create(
+            requirement_assessment=ra, question=q1, folder=folder
+        )
         # Select compliant + non_compliant on the same multi-choice question
         a1.selected_choices.set([q1_choices[0], q1_choices[1]])
-        a2 = Answer.objects.create(requirement_assessment=ra, question=q2, folder=folder)
+        a2 = Answer.objects.create(
+            requirement_assessment=ra, question=q2, folder=folder
+        )
         a2.selected_choices.set([q2_choices[0]])
 
         ra.compute_score_and_result()
@@ -661,9 +711,13 @@ class TestSemanticComputeResult:
         )
 
         # Both 'false' -> non_compliant (was non_compliant before the fix too)
-        a1 = Answer.objects.create(requirement_assessment=ra, question=q1, folder=folder)
+        a1 = Answer.objects.create(
+            requirement_assessment=ra, question=q1, folder=folder
+        )
         a1.selected_choices.set([q1_choices[1]])
-        a2 = Answer.objects.create(requirement_assessment=ra, question=q2, folder=folder)
+        a2 = Answer.objects.create(
+            requirement_assessment=ra, question=q2, folder=folder
+        )
         a2.selected_choices.set([q2_choices[1]])
         ra.compute_score_and_result()
         ra.refresh_from_db()
@@ -692,12 +746,20 @@ class TestSemanticComputeResult:
                 {"ref_id": "A", "value": "Yes", "compute_result": "true"},
             ],
             q2_choices=[
-                {"ref_id": "B", "value": "Non-compliant", "compute_result": "non_compliant"},
+                {
+                    "ref_id": "B",
+                    "value": "Non-compliant",
+                    "compute_result": "non_compliant",
+                },
             ],
         )
-        a1 = Answer.objects.create(requirement_assessment=ra, question=q1, folder=folder)
+        a1 = Answer.objects.create(
+            requirement_assessment=ra, question=q1, folder=folder
+        )
         a1.selected_choices.set([q1_choices[0]])
-        a2 = Answer.objects.create(requirement_assessment=ra, question=q2, folder=folder)
+        a2 = Answer.objects.create(
+            requirement_assessment=ra, question=q2, folder=folder
+        )
         a2.selected_choices.set([q2_choices[0]])
 
         ra.compute_score_and_result()
@@ -744,18 +806,29 @@ class TestResolveComputeResult:
         assert aggregate_compute_results([]) is None
         assert aggregate_compute_results([None, None]) is None
         assert aggregate_compute_results(["compliant", "compliant"]) == "compliant"
-        assert aggregate_compute_results(["non_compliant", "non_compliant"]) == "non_compliant"
         assert (
-            aggregate_compute_results(["compliant", "non_compliant"]) == "partially_compliant"
+            aggregate_compute_results(["non_compliant", "non_compliant"])
+            == "non_compliant"
         )
-        assert aggregate_compute_results(["partially_compliant"]) == "partially_compliant"
-        assert aggregate_compute_results(["not_applicable", "not_applicable"]) == "not_applicable"
+        assert (
+            aggregate_compute_results(["compliant", "non_compliant"])
+            == "partially_compliant"
+        )
+        assert (
+            aggregate_compute_results(["partially_compliant"]) == "partially_compliant"
+        )
+        assert (
+            aggregate_compute_results(["not_applicable", "not_applicable"])
+            == "not_applicable"
+        )
         # NA is a veto: any not_applicable in the mix forces the requirement to NA
         assert (
-            aggregate_compute_results(["not_applicable", "non_compliant"]) == "not_applicable"
+            aggregate_compute_results(["not_applicable", "non_compliant"])
+            == "not_applicable"
         )
         assert (
-            aggregate_compute_results(["not_applicable", "compliant"]) == "not_applicable"
+            aggregate_compute_results(["not_applicable", "compliant"])
+            == "not_applicable"
         )
         assert (
             aggregate_compute_results(["not_applicable", "partially_compliant"])
