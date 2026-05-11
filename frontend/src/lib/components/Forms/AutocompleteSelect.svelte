@@ -134,15 +134,13 @@
 
 	if (translateOptions) {
 		options = options.map((option) => {
-			return {
-				...option,
-				translatedLabel:
-					safeTranslate(option.label) !== option.label
-						? safeTranslate(option.label)
-						: safeTranslate(option.value) !== option.value
-							? safeTranslate(option.value)
-							: option.label
-			};
+			const fromLabel = safeTranslate(option.label);
+			if (fromLabel !== option.label) return { ...option, translatedLabel: fromLabel };
+			if (option.label === option.value) {
+				const fromValue = safeTranslate(option.value);
+				if (fromValue !== option.value) return { ...option, translatedLabel: fromValue };
+			}
+			return { ...option, translatedLabel: option.label };
 		});
 	}
 
@@ -491,7 +489,8 @@
 	});
 
 	run(() => {
-		cachedValue = selected.map((option) => option.value);
+		const mapped = selected.map((option) => option.value);
+		cachedValue = mapped.length > 0 ? mapped : undefined;
 		cachedOptions = selected;
 	});
 
