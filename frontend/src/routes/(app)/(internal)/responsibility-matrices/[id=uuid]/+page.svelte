@@ -870,9 +870,11 @@
 				</span>
 			{/each}
 			<span class="legend-spacer"></span>
-			<span class="legend-tip">
-				{m.clickToCycleHint()} · {m.shiftClickToReverseHint()}
-			</span>
+			{#if editMode}
+				<span class="legend-tip">
+					{m.clickToCycleHint()} · {m.shiftClickToReverseHint()}
+				</span>
+			{/if}
 		</footer>
 	{/if}
 </section>
