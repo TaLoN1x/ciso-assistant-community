@@ -828,8 +828,13 @@ class LibraryUpdater:
             )
 
     def update_reference_controls(self):
+        old_reference_controls_urn_set = set(self.old_library.reference_controls.all().values_list("urn", flat=True))
+        new_reference_controls_urn_set = set()
+
         for reference_control in self.reference_controls:
             normalized_urn = reference_control["urn"].lower()
+            new_reference_controls_urn_set.add(normalized_urn)
+
             ReferenceControl.objects.update_or_create(
                 urn=normalized_urn,
                 defaults=reference_control,
@@ -840,6 +845,18 @@ class LibraryUpdater:
                     "library": self.old_library,
                 },
             )
+
+        detached_reference_controls_urn_set = old_reference_controls_urn_set - new_reference_controls_urn_set
+        detached_reference_controls = ReferenceControl.objects.filter(urn__in=detached_reference_controls_urn_set)
+
+        for detached_reference_control in detached_reference_controls:
+            detached_reference_control.library = None
+
+        ReferenceControl.objects.bulk_update(
+            detached_reference_controls,
+            ["library"],
+            batch_size=100,
+        )
 
     def update_metric_definitions(self):
         from metrology.models import MetricDefinition
