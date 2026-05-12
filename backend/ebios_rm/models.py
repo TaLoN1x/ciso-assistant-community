@@ -308,7 +308,7 @@ class EbiosRMStudy(NameDescriptionMixin, ETADueDateMixin, FolderMixin):
         }
 
     @property
-    def last_risk_assessment(self):
+    def last_risk_assessment(self) -> Optional[RiskAssessment]:
         """Get the latest risk assessment for the study
         Returns:
             RiskAssessment: The latest risk assessment for the study
@@ -364,16 +364,15 @@ class EbiosRMStudy(NameDescriptionMixin, ETADueDateMixin, FolderMixin):
                 duplicated_ebios_rm_study.reviewers.set(self.reviewers.all())
                 duplicated_ebios_rm_study.authors.set(self.authors.all())
 
-                risk_assessment = RiskAssessment.objects.filter(
-                    ebios_rm_study=self
-                ).first()
-                if risk_assessment is not None:
-                    risk_assessment.duplicate(
-                        risk_assessment.name,
-                        risk_assessment.description,
-                        risk_assessment.perimeter,
-                        risk_assessment.version,
-                        risk_assessment.ref_id,
+                last_risk_assessment = self.last_risk_assessment
+
+                if last_risk_assessment is not None:
+                    last_risk_assessment.duplicate(
+                        last_risk_assessment.name,
+                        last_risk_assessment.description,
+                        last_risk_assessment.perimeter,
+                        last_risk_assessment.version,
+                        last_risk_assessment.ref_id,
                         ebios_rm_study=duplicated_ebios_rm_study,
                         folder=duplicated_ebios_rm_study.folder,
                     )
