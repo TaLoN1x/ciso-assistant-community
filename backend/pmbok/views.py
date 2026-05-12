@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from rest_framework import status
@@ -179,9 +179,21 @@ class ResponsibilityMatrixViewSet(BaseModelViewSet):
                     existing.save(update_fields=["role", "updated_at"])
                     assignment = existing
                 else:
-                    assignment = ResponsibilityAssignment.objects.create(
-                        activity=activity, actor_id=actor_id, role=next_role
-                    )
+                    # Race: a concurrent cycle-cell on the same empty cell can
+                    # also reach this branch. The (activity, actor) unique
+                    # constraint will raise IntegrityError for the loser; we
+                    # recover by reading the freshly-inserted row and updating
+                    # its role to the one we computed.
+                    try:
+                        assignment = ResponsibilityAssignment.objects.create(
+                            activity=activity, actor_id=actor_id, role=next_role
+                        )
+                    except IntegrityError:
+                        assignment = ResponsibilityAssignment.objects.get(
+                            activity=activity, actor_id=actor_id
+                        )
+                        assignment.role = next_role
+                        assignment.save(update_fields=["role", "updated_at"])
                 payload = {
                     "role": {
                         "id": str(next_role.id),

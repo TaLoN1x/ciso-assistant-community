@@ -63,6 +63,8 @@
 <Select
 	{form}
 	field="taxonomy"
+	cacheLock={cacheLocks['taxonomy']}
+	bind:cachedValue={formDataCache['taxonomy']}
 	options={[
 		{ value: 'raci', label: 'RACI' },
 		{ value: 'rasci', label: 'RASCI' },

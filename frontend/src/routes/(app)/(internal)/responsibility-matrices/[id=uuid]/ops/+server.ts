@@ -10,6 +10,14 @@ import { BASE_API_URL } from '$lib/utils/constants';
 import { error, json, type NumericRange } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function requireUuid(value: unknown, field: string): string {
+	if (typeof value !== 'string' || !UUID_RE.test(value)) {
+		error(400, { detail: `Invalid UUID for "${field}"` });
+	}
+	return value;
+}
+
 async function proxy(
 	fetchFn: typeof fetch,
 	url: string,
@@ -42,6 +50,7 @@ export const POST: RequestHandler = async ({ fetch, params, request, url }) => {
 			});
 
 		case 'update-activity': {
+			const activityId = requireUuid(body.id, 'id');
 			// Forward only fields that were explicitly provided so we don't accidentally
 			// clear M2Ms that weren't touched.
 			const patch: Record<string, unknown> = {};
@@ -60,36 +69,49 @@ export const POST: RequestHandler = async ({ fetch, params, request, url }) => {
 			}
 			return proxy(
 				fetch,
-				`${BASE_API_URL}/pmbok/responsibility-activities/${body.id}/`,
+				`${BASE_API_URL}/pmbok/responsibility-activities/${activityId}/`,
 				'PATCH',
 				patch
 			);
 		}
 
-		case 'delete-activity':
-			return proxy(fetch, `${BASE_API_URL}/pmbok/responsibility-activities/${body.id}/`, 'DELETE');
-
-		case 'create-actor':
-			return proxy(fetch, `${BASE_API_URL}/pmbok/responsibility-matrix-actors/`, 'POST', {
-				matrix: matrixId,
-				actor: body.actor,
-				order: body.order ?? 0
-			});
-
-		case 'delete-actor':
+		case 'delete-activity': {
+			const activityId = requireUuid(body.id, 'id');
 			return proxy(
 				fetch,
-				`${BASE_API_URL}/pmbok/responsibility-matrix-actors/${body.id}/`,
+				`${BASE_API_URL}/pmbok/responsibility-activities/${activityId}/`,
 				'DELETE'
 			);
+		}
 
-		case 'cycle-cell':
+		case 'create-actor': {
+			const actorId = requireUuid(body.actor, 'actor');
+			return proxy(fetch, `${BASE_API_URL}/pmbok/responsibility-matrix-actors/`, 'POST', {
+				matrix: matrixId,
+				actor: actorId,
+				order: body.order ?? 0
+			});
+		}
+
+		case 'delete-actor': {
+			const membershipId = requireUuid(body.id, 'id');
+			return proxy(
+				fetch,
+				`${BASE_API_URL}/pmbok/responsibility-matrix-actors/${membershipId}/`,
+				'DELETE'
+			);
+		}
+
+		case 'cycle-cell': {
+			const activityId = requireUuid(body.activity, 'activity');
+			const actorId = requireUuid(body.actor, 'actor');
 			return proxy(
 				fetch,
 				`${BASE_API_URL}/pmbok/responsibility-matrices/${matrixId}/cycle-cell/`,
 				'POST',
-				{ activity: body.activity, actor: body.actor, direction: body.direction }
+				{ activity: activityId, actor: actorId, direction: body.direction }
 			);
+		}
 
 		case 'reorder-activities':
 			return proxy(

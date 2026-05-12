@@ -1596,7 +1596,7 @@ export const ResponsibilityMatrixSchema = z.object({
 	...NameDescriptionMixin,
 	folder: z.string(),
 	ref_id: z.string().optional(),
-	preset: z.enum(['raci', 'rasci', 'rapid']).default('raci'),
+	preset: z.enum(['raci', 'rasci', 'rapid', 'custom']).default('raci'),
 	roles: z.array(z.string().uuid().optional()).optional(),
 	filtering_labels: z.array(z.string().uuid().optional()).optional()
 });

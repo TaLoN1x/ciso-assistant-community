@@ -224,11 +224,24 @@ class ResponsibilityAssignmentWriteSerializer(BaseModelSerializer):
             "activity", getattr(getattr(self, "instance", None), "activity", None)
         )
         role = data.get("role", getattr(getattr(self, "instance", None), "role", None))
+        actor = data.get(
+            "actor", getattr(getattr(self, "instance", None), "actor", None)
+        )
         if activity and role and role not in activity.matrix.roles.all():
             raise serializers.ValidationError(
                 {
                     "role": "Role is not part of this matrix's taxonomy. "
                     "Add it to the matrix first or pick a role already attached."
                 }
+            )
+        # Mirror the cycle_cell check: actor must be a member of the matrix.
+        # Without this, direct POST/PATCH could create rows for off-matrix actors.
+        if (
+            activity
+            and actor
+            and not activity.matrix.matrix_actors.filter(actor=actor).exists()
+        ):
+            raise serializers.ValidationError(
+                {"actor": "Actor is not a member of this matrix."}
             )
         return super().validate(data)
