@@ -3001,12 +3001,19 @@ class LoadFileView(APIView):
             excel_data = pd.ExcelFile(excel_file)
             sheet_names = excel_data.sheet_names
 
+            # Header override wins over the name found in the Summary sheet.
+            # Only applied when a single BIA is being imported to keep the
+            # multi-sheet (Summary + per-BIA sheets) linkage consistent.
+            override_name = (request.headers.get("X-Name") or "").strip()
+
             if len(sheet_names) == 1:
                 # Single-sheet file: treat it as a Summary-only import.
                 df = normalize_datetime_columns(
                     pd.read_excel(excel_file, sheet_name=sheet_names[0])
                 ).fillna("")
                 records = df.to_dict(orient="records")
+                if override_name and len(records) == 1:
+                    records[0]["name"] = override_name
                 base_context = BaseContext(
                     request,
                     folders_map=folders_map,
@@ -3040,6 +3047,11 @@ class LoadFileView(APIView):
                 pd.read_excel(excel_file, sheet_name="Summary")
             ).fillna("")
             summary_records = summary_df.to_dict(orient="records")
+
+            bia_name_override: Optional[str] = None
+            if override_name and len(summary_records) == 1:
+                summary_records[0]["name"] = override_name
+                bia_name_override = override_name
 
             base_context = BaseContext(
                 request,
@@ -3082,7 +3094,9 @@ class LoadFileView(APIView):
                 ).fillna("")
                 sheet_records = sheet_df.to_dict(orient="records")
 
-                sheet_records = _inject_bia_hint(sheet_records, base_name)
+                sheet_records = _inject_bia_hint(
+                    sheet_records, bia_name_override or base_name
+                )
 
                 if is_threshold_sheet:
                     thresholds_result = (

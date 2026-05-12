@@ -629,6 +629,7 @@ def register_data_wizard_command(config: Dict[str, object]) -> None:
         "FindingsAssessment",
         "EbiosRMStudyARM",
         "EbiosRMStudyExcel",
+        "BusinessImpactAnalysis",
     }
 
     @cli.command(name=cli_name, help=help_text)
