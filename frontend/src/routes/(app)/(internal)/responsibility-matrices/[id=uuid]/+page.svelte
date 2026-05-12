@@ -356,12 +356,12 @@
 	async function removeActor(ma: MatrixActor) {
 		const hasAssignments = assignments.some((a) => a.actor.id === ma.actor.id);
 		const body = hasAssignments
-			? `Remove ${ma.actor.str}? Existing cells for this actor will be cleared.`
-			: `Remove ${ma.actor.str}?`;
+			? m.removeActorPromptWithCells({ actor: ma.actor.str })
+			: m.removeActorPrompt({ actor: ma.actor.str });
 		const confirmed = await new Promise<boolean>((resolve) => {
 			const modal: ModalSettings = {
 				type: 'confirm',
-				title: 'Remove actor',
+				title: m.removeActor(),
 				body,
 				response: (r: boolean) => resolve(r)
 			};
@@ -515,7 +515,7 @@
 				class="picker-btn"
 				onclick={addActor}
 				disabled={!actorPickerValue}
-				aria-label="Add actor to matrix"
+				aria-label={m.addActor?.() ?? 'Add actor'}
 			>
 				<i class="fa-solid fa-arrow-right"></i>
 			</button>
@@ -525,8 +525,8 @@
 	{#if activities.length === 0 && matrixActors.length === 0}
 		<div class="empty-state">
 			<i class="fa-solid fa-table-cells-large"></i>
-			<p class="empty-title">This matrix is empty</p>
-			<p class="empty-hint">Add an actor on the right, then add activities below.</p>
+			<p class="empty-title">{m.emptyMatrixTitle()}</p>
+			<p class="empty-hint">{m.emptyMatrixHint()}</p>
 		</div>
 	{:else}
 		<div class="matrix-scroll">
@@ -548,20 +548,22 @@
 								ondrop={(e) => actorDrop(e, ma.id)}
 							>
 								<div class="actor-header">
-									<span class="actor-grip" title="Drag to reorder">
+									<span class="actor-grip" title={m.dragToReorder()}>
 										<i class="fa-solid fa-grip"></i>
 									</span>
 									<span class="actor-name" title={ma.actor.str}>{ma.actor.str}</span>
 									<button
 										class="actor-remove"
 										onclick={() => removeActor(ma)}
-										aria-label="Remove actor"
-										title="Remove from matrix"
+										aria-label={m.removeActor()}
+										title={m.removeFromMatrix()}
 									>
 										<i class="fa-solid fa-xmark"></i>
 									</button>
 									{#if actorCounts[ma.actor.id]}
-										<span class="actor-count" title="Assignments">{actorCounts[ma.actor.id]}</span>
+										<span class="actor-count" title={m.responsibilityAssignments()}
+											>{actorCounts[ma.actor.id]}</span
+										>
 									{/if}
 								</div>
 							</th>
@@ -586,7 +588,7 @@
 							>
 								<div class="activity-row">
 									<span class="row-index">{rowIdx + 1}</span>
-									<span class="activity-grip" title="Drag to reorder">
+									<span class="activity-grip" title={m.dragToReorder()}>
 										<i class="fa-solid fa-grip-vertical"></i>
 									</span>
 									{#if editingActivityId === activity.id}
@@ -605,7 +607,7 @@
 											type="button"
 											class="activity-name"
 											onclick={() => startRename(activity)}
-											title="Click to rename"
+											title={m.clickToRename()}
 										>
 											{activity.name}
 										</button>
@@ -613,8 +615,8 @@
 									<button
 										class="activity-details"
 										onclick={() => openDrawer(activity)}
-										aria-label="Activity details"
-										title="Open details (description, linked objects)"
+										aria-label={m.activityDetails()}
+										title={m.openActivityDetailsHint()}
 										class:has-details={!!(
 											activity.description ||
 											LINK_FIELDS.some((f) => (activity[f] ?? []).length > 0)
@@ -625,8 +627,8 @@
 									<button
 										class="activity-delete"
 										onclick={() => deleteActivity(activity)}
-										aria-label="Delete activity"
-										title="Delete activity"
+										aria-label={m.deleteActivity()}
+										title={m.deleteActivity()}
 									>
 										<i class="fa-solid fa-trash-can"></i>
 									</button>
@@ -644,8 +646,8 @@
 										style:--role-color={cell?.role?.color || '#94a3b8'}
 										onclick={(e) => cycleCell(activity, ma.actor, e)}
 										title={cell
-											? `${roleLabel(cell.role)} — click to cycle, shift-click to reverse`
-											: 'Click to assign first role'}
+											? m.cellCycleTooltip({ role: roleLabel(cell.role) })
+											: m.cellEmptyHint()}
 									>
 										{#if cell}
 											<span class="cell-letter">{cell.role.code}</span>
@@ -691,7 +693,7 @@
 
 		{#if drawerActivity}
 			<div class="drawer-backdrop" onclick={closeDrawer} role="presentation"></div>
-			<aside class="drawer" role="dialog" aria-label="Activity details">
+			<aside class="drawer" role="dialog" aria-label={m.activityDetails()}>
 				<header class="drawer-header">
 					<div class="drawer-title">
 						<div class="drawer-eyebrow">
@@ -702,7 +704,7 @@
 						</div>
 						<h3 class="drawer-name">{drawerActivity.name}</h3>
 					</div>
-					<button class="drawer-close" onclick={closeDrawer} aria-label="Close">
+					<button class="drawer-close" onclick={closeDrawer} aria-label={m.close()}>
 						<i class="fa-solid fa-xmark"></i>
 					</button>
 				</header>
@@ -716,14 +718,16 @@
 								onclick={() => (drawerDescriptionPreview = false)}
 								type="button"
 							>
-								<i class="fa-solid fa-pen"></i> Edit
+								<i class="fa-solid fa-pen"></i>
+								{m.edit()}
 							</button>
 							<button
 								class:active={drawerDescriptionPreview}
 								onclick={() => (drawerDescriptionPreview = true)}
 								type="button"
 							>
-								<i class="fa-solid fa-eye"></i> Preview
+								<i class="fa-solid fa-eye"></i>
+								{m.preview()}
 							</button>
 						</div>
 					</div>
@@ -740,9 +744,7 @@
 							{#if drawerDescription}
 								<MarkdownRenderer content={drawerDescription} />
 							{:else}
-								<p class="drawer-empty">
-									No description yet — click <i class="fa-solid fa-pen"></i> Edit to add one.
-								</p>
+								<p class="drawer-empty">{m.noDescriptionYet()}</p>
 							{/if}
 						</div>
 					{:else}
@@ -750,10 +752,10 @@
 							class="drawer-md-edit"
 							bind:value={drawerDescription}
 							onblur={saveDescription}
-							placeholder="Use Markdown — # heading, **bold**, [link](url), `code`…"
+							placeholder={m.markdownPlaceholder()}
 						></textarea>
 						<p class="drawer-md-hint">
-							Saves on blur. {drawerSaving ? 'Saving…' : 'Changes are auto-persisted.'}
+							{drawerSaving ? m.saving() : `${m.savesOnBlur()} ${m.changesAutoPersisted()}`}
 						</p>
 					{/if}
 				</section>
@@ -780,7 +782,7 @@
 							optionsEndpoint={endpoint}
 							optionsLabelField="auto"
 							label=""
-							placeholder="Search {title.toLowerCase()}…"
+							placeholder={m.searchObjectsPlaceholder({ object: title.toLowerCase() })}
 						/>
 					</section>
 				{/snippet}
@@ -850,8 +852,7 @@
 			{/each}
 			<span class="legend-spacer"></span>
 			<span class="legend-tip">
-				<kbd class="kbd">click</kbd> to cycle ·
-				<kbd class="kbd">⇧ click</kbd> to reverse
+				{m.clickToCycleHint()} · {m.shiftClickToReverseHint()}
 			</span>
 		</footer>
 	{/if}
