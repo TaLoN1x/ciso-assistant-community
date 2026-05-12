@@ -5785,6 +5785,8 @@ class RiskAssessment(Assessment):
         verbose_name=_("Automatic sync to actions"),
     )
 
+    fields_to_check = [*Assessment.fields_to_check, "ebios_rm_study"]
+
     class Meta:
         verbose_name = _("Risk assessment")
         verbose_name_plural = _("Risk assessments")
