@@ -81,13 +81,19 @@ class AccreditationViewSet(BaseModelViewSet):
 
 
 class ResponsibilityRoleViewSet(BaseModelViewSet):
-    """API endpoint that allows responsibility roles (R/A/C/I/...) to be viewed or edited."""
+    """API endpoint for responsibility roles (read-only).
+
+    Roles are managed via the seeded builtin set + ResponsibilityRole.create_default_roles().
+    There is no frontend write path; mutations would only widen the attack
+    surface for no UX gain. Lock to safe methods.
+    """
 
     model = ResponsibilityRole
     serializers_module = "pmbok.serializers"
     filterset_fields = ["folder", "taxonomy", "builtin", "is_visible"]
     search_fields = ["code", "name", "description"]
     ordering = ["taxonomy", "order", "code"]
+    http_method_names = ["get", "head", "options"]
 
     @method_decorator(cache_page(60 * LONG_CACHE_TTL))
     @action(detail=False, name="Get Responsibility Role taxonomy choices")
@@ -259,9 +265,17 @@ class ResponsibilityActivityViewSet(BaseModelViewSet):
 
 
 class ResponsibilityAssignmentViewSet(BaseModelViewSet):
-    """API endpoint that allows responsibility assignments (activity × actor × role cells) to be viewed or edited."""
+    """API endpoint for responsibility assignments (read-only).
+
+    All cell mutations route through ResponsibilityMatrixViewSet.cycle_cell,
+    which validates actor membership in the matrix and role-in-taxonomy
+    before writing. Exposing direct POST/PATCH/DELETE here would re-open
+    those bypass paths for no UX gain (the frontend never writes directly).
+    Lock to safe methods.
+    """
 
     model = ResponsibilityAssignment
     serializers_module = "pmbok.serializers"
     filterset_fields = ["activity", "actor", "role", "activity__matrix"]
     ordering = ["activity", "role", "actor"]
+    http_method_names = ["get", "head", "options"]
