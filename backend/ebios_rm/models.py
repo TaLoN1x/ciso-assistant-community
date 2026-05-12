@@ -1188,6 +1188,23 @@ class OperatingMode(NameDescriptionMixin, FolderMixin):
             updated_at=timezone.now()
         )
 
+    def duplicate(
+        self, new_operational_scenario: OperationalScenario
+    ) -> tuple[OperatingMode, None] | tuple[None, str]:
+        duplicated_operating_mode = OperatingMode.objects.create(
+            name=self.name,
+            description=self.description,
+            ref_id=self.ref_id,
+            operational_scenario=new_operational_scenario,
+            likelihood=self.likelihood,
+            graph_columns=self.graph_columns,
+        )
+
+        for kill_chain in KillChain.objects.filter(operating_mode=self):
+            kill_chain.duplicate(duplicated_operating_mode)
+
+        return duplicated_operating_mode, None
+
     @property
     def ebios_rm_study(self):
         return self.operational_scenario.ebios_rm_study
@@ -1282,7 +1299,7 @@ class OperationalScenario(AbstractBaseModel, FolderMixin):
         if duplicated_attack_path is None:
             return None, f"Duplicated attack path not found."
 
-        duplicated_operation_scenario = OperationalScenario.objects.create(
+        duplicated_operational_scenario = OperationalScenario.objects.create(
             ebios_rm_study=ebios_rm_study,
             operating_modes_description=self.operating_modes_description,
             likelihood=self.likelihood,
@@ -1290,9 +1307,12 @@ class OperationalScenario(AbstractBaseModel, FolderMixin):
             justification=self.justification,
             attack_path=duplicated_attack_path,
         )
-        duplicated_operation_scenario.threats.set(self.threats.all())
+        duplicated_operational_scenario.threats.set(self.threats.all())
 
-        return duplicated_operation_scenario, None
+        for operating_mode in OperatingMode.objects.filter(operational_scenario=self):
+            operating_mode.duplicate(duplicated_operational_scenario)
+
+        return duplicated_operational_scenario, None
 
     @property
     def risk_matrix(self):
@@ -1458,6 +1478,22 @@ class KillChain(AbstractBaseModel, FolderMixin):
                     "elementary_action": f"The elementary action '{self.elementary_action}' is already used in this operating mode's kill chain."
                 }
             )
+
+    def duplicate(
+        self, new_operating_mode: OperatingMode
+    ) -> tuple[KillChain, None] | tuple[None, str]:
+        duplicated_kill_chain = KillChain.objects.create(
+            operating_mode=new_operating_mode,
+            elementary_action=self.elementary_action,
+            is_highlighted=self.is_highlighted,
+            logic_operator=self.logic_operator,
+            position_x=self.position_x,
+            position_y=self.position_y,
+        )
+
+        duplicated_kill_chain.antecedents.set(self.antecedents.all())
+
+        return duplicated_kill_chain, None
 
     def __str__(self):
         return f"{self.operating_mode} - {self.elementary_action.name}"
