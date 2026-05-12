@@ -13,9 +13,11 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from core.models import (
+    Actor,
     AppliedControl,
     Asset,
     Evidence,
+    FindingsAssessment,
     Incident,
     Perimeter,
     ReferenceControl,
@@ -32,6 +34,8 @@ from data_wizard.views import (
     ConflictMode,
     ElementaryActionRecordConsumer,
     EvidenceRecordConsumer,
+    FindingsAssessmentRecordConsumer,
+    FolderRecordConsumer,
     IncidentRecordConsumer,
     PerimeterRecordConsumer,
     PolicyRecordConsumer,
@@ -854,3 +858,228 @@ class TestResultDataclass:
         r = Result()
         r.add_error(Error(record={}, error="oops"), fail_count=5)
         assert r.failed == 5
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FolderRecordConsumer
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestFolderConsumer:
+    def test_missing_name_returns_error(self, base_context):
+        consumer = FolderRecordConsumer(base_context)
+        record_data, error = consumer.prepare_create({}, None)
+        assert error is not None
+        assert "mandatory" in error.error.lower()
+
+    def test_unknown_parent_returns_error(self, base_context):
+        consumer = FolderRecordConsumer(base_context)
+        record_data, error = consumer.prepare_create(
+            {"name": "New", "domain": "DoesNotExist"}, None
+        )
+        assert error is not None
+        assert "not found" in error.error
+
+    def test_ambiguous_parent_returns_error(
+        self, base_context, root_folder, other_folder
+    ):
+        # Two folders with the same name under different parents — triggers ambiguity.
+        Folder.objects.create(
+            name="Shared",
+            parent_folder=root_folder,
+            content_type=Folder.ContentType.DOMAIN,
+        )
+        Folder.objects.create(
+            name="Shared",
+            parent_folder=other_folder,
+            content_type=Folder.ContentType.DOMAIN,
+        )
+        consumer = FolderRecordConsumer(base_context)
+        record_data, error = consumer.prepare_create(
+            {"name": "Child", "domain": "Shared"}, None
+        )
+        assert error is not None
+        assert "Multiple" in error.error
+
+    def test_no_domain_uses_root_folder(self, base_context, root_folder):
+        consumer = FolderRecordConsumer(base_context)
+        record_data, error = consumer.prepare_create({"name": "TopLevel"}, None)
+        assert error is None
+        assert record_data["parent_folder"] == root_folder.id
+
+    def test_valid_domain_resolves_parent(self, base_context, domain_folder):
+        consumer = FolderRecordConsumer(base_context)
+        record_data, error = consumer.prepare_create(
+            {"name": "Child", "domain": domain_folder.name}, None
+        )
+        assert error is None
+        assert record_data["parent_folder"] == domain_folder.id
+
+    def test_find_existing_by_name_and_parent(self, base_context, domain_folder):
+        existing = Folder.objects.create(
+            name="Existing Sub",
+            parent_folder=domain_folder,
+            content_type=Folder.ContentType.DOMAIN,
+        )
+        consumer = FolderRecordConsumer(base_context)
+        found = consumer.find_existing(
+            {"name": "Existing Sub", "parent_folder": domain_folder.id}
+        )
+        assert found is not None
+        assert found.id == existing.id
+
+    def test_find_existing_returns_none_when_not_found(self, base_context):
+        consumer = FolderRecordConsumer(base_context)
+        assert consumer.find_existing({"name": "Ghost"}) is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FindingsAssessmentRecordConsumer
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestFindingsAssessmentConsumer:
+    def _findings_context(
+        self, domain_folder, admin_user, perimeter=None, perimeter_id=None
+    ):
+        request = MagicMock()
+        request.user = admin_user
+        request.META = {}
+        request.headers.get.return_value = None
+        return BaseContext(
+            request=request,
+            folder_id=str(domain_folder.id),
+            folders_map={},
+            on_conflict=ConflictMode.STOP,
+            perimeter_id=str(perimeter_id or (perimeter.id if perimeter else "")),
+        )
+
+    def test_create_context_fails_with_invalid_perimeter(
+        self, domain_folder, admin_user
+    ):
+        ctx = self._findings_context(
+            domain_folder,
+            admin_user,
+            perimeter_id="00000000-0000-0000-0000-000000000000",
+        )
+        consumer = FindingsAssessmentRecordConsumer(ctx)
+        result = _run(
+            FindingsAssessmentRecordConsumer,
+            ctx,
+            [{"name": "Finding A"}, {"name": "Finding B"}],
+        )
+        assert result.failed == 2
+        assert result.created == 0
+
+    def test_happy_path_creates_finding(self, domain_folder, admin_user):
+        perimeter = Perimeter.objects.create(
+            name="Test Perimeter", folder=domain_folder
+        )
+        ctx = self._findings_context(domain_folder, admin_user, perimeter=perimeter)
+        result = _run(
+            FindingsAssessmentRecordConsumer,
+            ctx,
+            [
+                {
+                    "name": "SQL Injection",
+                    "severity": "high",
+                    "ref_id": "FIND-001",
+                    "status": "identified",
+                }
+            ],
+        )
+        assert result.created == 1
+        assert FindingsAssessment.objects.filter(folder=domain_folder).exists()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VulnerabilityRecordConsumer — pipe/comma multi-value M2M
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestVulnerabilityPipeSeparatedM2M:
+    def test_pipe_separated_applied_controls_resolved(
+        self, base_context, domain_folder
+    ):
+        ac1 = AppliedControl.objects.create(
+            name="Patch A", ref_id="AC-P1", folder=domain_folder
+        )
+        ac2 = AppliedControl.objects.create(
+            name="Patch B", ref_id="AC-P2", folder=domain_folder
+        )
+        consumer = VulnerabilityRecordConsumer(base_context)
+        record_data, error = consumer.prepare_create(
+            {"name": "Vuln", "applied_controls": "AC-P1|AC-P2"}, None
+        )
+        assert error is None
+        assert ac1.id in record_data["applied_controls"]
+        assert ac2.id in record_data["applied_controls"]
+
+    def test_comma_separated_assets_resolved(self, base_context, domain_folder):
+        a1 = Asset.objects.create(
+            name="Server A", ref_id="AST-A1", folder=domain_folder
+        )
+        a2 = Asset.objects.create(
+            name="Server B", ref_id="AST-A2", folder=domain_folder
+        )
+        consumer = VulnerabilityRecordConsumer(base_context)
+        record_data, error = consumer.prepare_create(
+            {"name": "Vuln", "assets": "AST-A1,AST-A2"}, None
+        )
+        assert error is None
+        assert a1.id in record_data["assets"]
+        assert a2.id in record_data["assets"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UPDATE mode: M2M owner clear + serializer validation stopped flag
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestUpdateModeEdgeCases:
+    def test_empty_owner_column_clears_existing_owners(
+        self, update_context, domain_folder, admin_user
+    ):
+        ac = AppliedControl.objects.create(
+            name="Firewall Rule", ref_id="AC-OWN-01", folder=domain_folder
+        )
+        actor, _ = Actor.objects.get_or_create(user=admin_user)
+        ac.owner.add(actor)
+        assert ac.owner.count() == 1
+
+        _run(
+            AppliedControlRecordConsumer,
+            update_context,
+            [{"name": "Firewall Rule", "ref_id": "AC-OWN-01", "owner": ""}],
+        )
+
+        ac.refresh_from_db()
+        assert ac.owner.count() == 0
+
+    def test_update_serializer_validation_failure_continues_processing(
+        self, update_context, domain_folder
+    ):
+        AppliedControl.objects.create(
+            name="Existing AC", ref_id="AC-STOP-01", folder=domain_folder
+        )
+        # UPDATE mode: a serializer validation failure records the error and
+        # continues to the next record — stopped must remain False.
+        result = _run(
+            AppliedControlRecordConsumer,
+            update_context,
+            [
+                {
+                    "name": "Existing AC",
+                    "ref_id": "AC-STOP-01",
+                    "status": "INVALID_STATUS_XYZ",
+                },
+                {"name": "Second Record", "ref_id": "AC-STOP-02"},
+            ],
+        )
+        assert result.stopped is False
+        assert result.failed == 1
+        assert result.created == 1

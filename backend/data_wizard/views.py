@@ -302,7 +302,9 @@ def _resolve_filtering_labels(value: Any) -> list[UUID]:
     return label_ids
 
 
-def _resolve_vulnerabilities(value, folder) -> tuple[list[UUID], list[str]]:
+def _resolve_vulnerabilities(
+    value: str | None, folder: "Folder"
+) -> tuple[list[UUID], list[str]]:
     """
     Parse pipe- or comma-separated vulnerability identifiers and return a tuple of
     (list of resolved Vulnerability IDs, list of values that failed to resolve).
@@ -615,6 +617,9 @@ class RecordConsumer[Context = None](ABC):
                                 results.add_updated()
                             except Exception as e:
                                 results.add_error(Error(record=record, error=str(e)))
+                                if self.on_conflict == ConflictMode.STOP:
+                                    results.stopped = True
+                                    break
                         else:
                             results.add_error(
                                 Error(
@@ -622,6 +627,9 @@ class RecordConsumer[Context = None](ABC):
                                     error=str(serializer.errors),
                                 )
                             )
+                            if self.on_conflict == ConflictMode.STOP:
+                                results.stopped = True
+                                break
                         continue
 
             serializer = self.SERIALIZER_CLASS(
@@ -784,8 +792,17 @@ class AssetRecordConsumer(RecordConsumer[list]):
             if not asset_ref_id:
                 continue
 
-            # Find the created asset
-            asset = Asset.objects.filter(ref_id=asset_ref_id).first()
+            domain_name = record.get("domain")
+            record_folder_id = (
+                self.folders_map.get(domain_name.lower(), self.folder_id)
+                if domain_name is not None
+                else self.folder_id
+            )
+
+            # Find the created asset (scoped to its folder)
+            asset = Asset.objects.filter(
+                ref_id=asset_ref_id, folder_id=record_folder_id
+            ).first()
             if not asset:
                 continue
 
@@ -799,9 +816,11 @@ class AssetRecordConsumer(RecordConsumer[list]):
             else:
                 parent_ref_ids = [str(parent_assets_ref)]
 
-            # Link parent assets
+            # Link parent assets (scoped to same folder)
             for parent_ref_id in parent_ref_ids:
-                parent_asset = Asset.objects.filter(ref_id=parent_ref_id).first()
+                parent_asset = Asset.objects.filter(
+                    ref_id=parent_ref_id, folder_id=record_folder_id
+                ).first()
                 if parent_asset and parent_asset.id != asset.id:
                     asset.parent_assets.add(parent_asset)
 
@@ -1337,15 +1356,6 @@ class FindingsAssessmentRecordConsumer(RecordConsumer[FindingsAssessmentContext]
             record.get("vulnerabilities"), context.folder
         )
 
-        if failed_vulnerabilities:
-            return {}, Error(
-                record=record,
-                error=(
-                    "Failed to create or retrieve thiese vulnerabilities: "
-                    + ", ".join(failed_vulnerabilities)
-                ),
-            )
-
         finding_data = {
             "name": name,
             "description": record.get("description"),
@@ -1697,7 +1707,7 @@ class VulnerabilityRecordConsumer(RecordConsumer[None]):
             status = "--"
 
         applied_controls = []
-        for token in (record.get("applied_controls") or "").splitlines():
+        for token in re.split(r"[|,]", record.get("applied_controls") or ""):
             token = token.strip()
             if not token:
                 continue
@@ -1719,7 +1729,7 @@ class VulnerabilityRecordConsumer(RecordConsumer[None]):
                 )
 
         assets = []
-        for token in (record.get("assets") or "").splitlines():
+        for token in re.split(r"[|,]", record.get("assets") or ""):
             token = token.strip()
             if not token:
                 continue
@@ -1741,7 +1751,7 @@ class VulnerabilityRecordConsumer(RecordConsumer[None]):
                 )
 
         security_exceptions = []
-        for token in (record.get("security_exceptions") or "").splitlines():
+        for token in re.split(r"[|,]", record.get("security_exceptions") or ""):
             token = token.strip()
             if not token:
                 continue

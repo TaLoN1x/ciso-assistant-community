@@ -21,6 +21,7 @@ import pytest
 from core.models import (
     AppliedControl,
     Asset,
+    Incident,
     Perimeter,
     Policy,
     ReferenceControl,
@@ -517,6 +518,385 @@ class TestProcessingEndpoint:
         )
         resp = _post(api_client, excel.read(), "a.xlsx", "Processing", domain_folder.id)
         assert resp.json()["results"]["created"] == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Field-contract tests — prove each supported field round-trips correctly
+# through a real file upload, not just a unit-layer consumer call.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestAssetFieldContracts:
+    def test_type_primary_alias_stored_as_pr(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,type\nApp Server,AST-FC-01,primary\n"),
+            "a.csv",
+            "Asset",
+            domain_folder.id,
+        )
+        assert Asset.objects.get(ref_id="AST-FC-01").type == "PR"
+
+    def test_link_column_alias_stored_as_reference_link(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,link\nDB Server,AST-FC-02,https://wiki.example.com\n"),
+            "a.csv",
+            "Asset",
+            domain_folder.id,
+        )
+        assert (
+            Asset.objects.get(ref_id="AST-FC-02").reference_link
+            == "https://wiki.example.com"
+        )
+
+    def test_domain_column_resolves_to_correct_folder(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv(f"name,ref_id,domain\nStorage,AST-FC-03,{domain_folder.name}\n"),
+            "a.csv",
+            "Asset",
+            domain_folder.id,
+        )
+        assert Asset.objects.get(ref_id="AST-FC-03").folder == domain_folder
+
+    def test_parent_asset_ref_id_linked_in_same_upload(
+        self, api_client, domain_folder, all_accessible
+    ):
+        # Both parent and child are in the same CSV — proves the second-pass
+        # batch linking in views.py (not just update-mode relation attachment).
+        csv = (
+            "name,ref_id,type,parent_asset_ref_id\n"
+            "Parent Server,AST-PAR-01,primary,\n"
+            "Child App,AST-CHD-01,primary,AST-PAR-01\n"
+        )
+        resp = _post(api_client, _csv(csv), "a.csv", "Asset", domain_folder.id)
+        assert resp.json()["results"]["created"] == 2
+        parent = Asset.objects.get(ref_id="AST-PAR-01")
+        child = Asset.objects.get(ref_id="AST-CHD-01")
+        assert parent in child.parent_assets.all()
+
+
+@pytest.mark.django_db
+class TestAppliedControlFieldContracts:
+    def test_effort_alias_extra_small_stored_as_xs(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,effort\nPatch Cycle,AC-FC-01,extra small\n"),
+            "a.csv",
+            "AppliedControl",
+            domain_folder.id,
+        )
+        assert AppliedControl.objects.get(ref_id="AC-FC-01").effort == "XS"
+
+    def test_impact_text_alias_high_stored_as_4(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,impact\nFirewall,AC-FC-02,high\n"),
+            "a.csv",
+            "AppliedControl",
+            domain_folder.id,
+        )
+        assert AppliedControl.objects.get(ref_id="AC-FC-02").control_impact == 4
+
+    def test_reference_control_linked_by_ref_id(
+        self, api_client, domain_folder, all_accessible
+    ):
+        rc = ReferenceControl.objects.create(
+            name="MFA Policy", ref_id="RC-LINK-01", folder=domain_folder
+        )
+        _post(
+            api_client,
+            _csv("name,ref_id,reference_control\nMFA Impl,AC-FC-03,RC-LINK-01\n"),
+            "a.csv",
+            "AppliedControl",
+            domain_folder.id,
+        )
+        assert AppliedControl.objects.get(ref_id="AC-FC-03").reference_control == rc
+
+    def test_csf_function_uppercase_lowercased_on_import(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,csf_function\nFirewall Policy,AC-FC-04,PROTECT\n"),
+            "a.csv",
+            "AppliedControl",
+            domain_folder.id,
+        )
+        assert AppliedControl.objects.get(ref_id="AC-FC-04").csf_function == "protect"
+
+
+@pytest.mark.django_db
+class TestPerimeterFieldContracts:
+    def test_status_alias_stored_as_lc_status(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,status\nERP,PRM-FC-01,in_prod\n"),
+            "a.csv",
+            "Perimeter",
+            domain_folder.id,
+        )
+        assert Perimeter.objects.get(ref_id="PRM-FC-01").lc_status == "in_prod"
+
+
+@pytest.mark.django_db
+class TestReferenceControlFieldContracts:
+    def test_function_alias_maps_to_csf_function(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,function\nAccess Control,RC-FC-01,protect\n"),
+            "a.csv",
+            "ReferenceControl",
+            domain_folder.id,
+        )
+        assert ReferenceControl.objects.get(ref_id="RC-FC-01").csf_function == "protect"
+
+    def test_governance_alias_normalised_to_govern(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,function\nPolicy Doc,RC-FC-02,governance\n"),
+            "a.csv",
+            "ReferenceControl",
+            domain_folder.id,
+        )
+        assert ReferenceControl.objects.get(ref_id="RC-FC-02").csf_function == "govern"
+
+
+@pytest.mark.django_db
+class TestSecurityExceptionFieldContracts:
+    def test_severity_high_stored_as_3(self, api_client, domain_folder, all_accessible):
+        _post(
+            api_client,
+            _csv("name,ref_id,severity\nRisk Accepted,SE-FC-01,high\n"),
+            "a.csv",
+            "SecurityException",
+            domain_folder.id,
+        )
+        assert SecurityException.objects.get(ref_id="SE-FC-01").severity == 3
+
+    def test_status_in_review_alias_stored_correctly(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,status\nLegacy App,SE-FC-02,in review\n"),
+            "a.csv",
+            "SecurityException",
+            domain_folder.id,
+        )
+        assert SecurityException.objects.get(ref_id="SE-FC-02").status == "in_review"
+
+
+@pytest.mark.django_db
+class TestIncidentEndpoint:
+    def test_create(self, api_client, domain_folder, all_accessible):
+        resp = _post(
+            api_client,
+            _csv("name,ref_id\nData Breach,INC-001\n"),
+            "a.csv",
+            "Incident",
+            domain_folder.id,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["results"]["created"] == 1
+        assert Incident.objects.filter(ref_id="INC-001").exists()
+
+    def test_severity_alias_major_stored_as_2(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,severity\nOutage,INC-FC-01,major\n"),
+            "a.csv",
+            "Incident",
+            domain_folder.id,
+        )
+        assert Incident.objects.get(ref_id="INC-FC-01").severity == 2
+
+    def test_status_alias_in_progress_stored_as_ongoing(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,status\nRansomware,INC-FC-02,in progress\n"),
+            "a.csv",
+            "Incident",
+            domain_folder.id,
+        )
+        assert Incident.objects.get(ref_id="INC-FC-02").status == "ongoing"
+
+    def test_detection_alias_internal_stored_as_internally_detected(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,detection\nPhishing,INC-FC-03,internal\n"),
+            "a.csv",
+            "Incident",
+            domain_folder.id,
+        )
+        assert (
+            Incident.objects.get(ref_id="INC-FC-03").detection == "internally_detected"
+        )
+
+    def test_bad_security_objectives_on_asset_yields_warning_not_error(
+        self, api_client, domain_folder, all_accessible
+    ):
+        resp = _post(
+            api_client,
+            _csv("name,ref_id,security_objectives\nBadObj,AST-FC-WARN-01,bad_format\n"),
+            "a.csv",
+            "Asset",
+            domain_folder.id,
+        )
+        body = resp.json()["results"]
+        # Warning path: record is still created, but a warning is recorded.
+        assert body["created"] == 1
+        assert Asset.objects.filter(ref_id="AST-FC-WARN-01").exists()
+
+
+@pytest.mark.django_db
+class TestVulnerabilityFieldContracts:
+    def test_status_exploitable_stored_correctly(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,status\nLog4Shell,CVE-FC-01,exploitable\n"),
+            "a.csv",
+            "Vulnerability",
+            domain_folder.id,
+        )
+        assert Vulnerability.objects.get(ref_id="CVE-FC-01").status == "exploitable"
+
+    def test_status_not_exploitable_alias_stored_correctly(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,status\nLog4j,CVE-FC-03,not exploitable\n"),
+            "a.csv",
+            "Vulnerability",
+            domain_folder.id,
+        )
+        assert Vulnerability.objects.get(ref_id="CVE-FC-03").status == "not_exploitable"
+
+    def test_severity_critical_stored_correctly(
+        self, api_client, domain_folder, all_accessible
+    ):
+        _post(
+            api_client,
+            _csv("name,ref_id,severity\nShellShock,CVE-FC-02,critical\n"),
+            "a.csv",
+            "Vulnerability",
+            domain_folder.id,
+        )
+        assert Vulnerability.objects.get(ref_id="CVE-FC-02").severity == 4
+
+    def test_applied_controls_linked_by_ref_id(
+        self, api_client, domain_folder, all_accessible
+    ):
+        AppliedControl.objects.create(
+            name="Patch Policy", ref_id="AC-VUL-01", folder=domain_folder
+        )
+        _post(
+            api_client,
+            _csv("name,ref_id,applied_controls\nHeartbleed,CVE-FC-04,AC-VUL-01\n"),
+            "a.csv",
+            "Vulnerability",
+            domain_folder.id,
+        )
+        vuln = Vulnerability.objects.get(ref_id="CVE-FC-04")
+        assert (
+            AppliedControl.objects.get(ref_id="AC-VUL-01")
+            in vuln.applied_controls.all()
+        )
+
+    def test_assets_linked_by_ref_id(self, api_client, domain_folder, all_accessible):
+        Asset.objects.create(
+            name="Web Server", ref_id="AST-VUL-01", folder=domain_folder
+        )
+        _post(
+            api_client,
+            _csv("name,ref_id,assets\nSpectre,CVE-FC-05,AST-VUL-01\n"),
+            "a.csv",
+            "Vulnerability",
+            domain_folder.id,
+        )
+        vuln = Vulnerability.objects.get(ref_id="CVE-FC-05")
+        assert Asset.objects.get(ref_id="AST-VUL-01") in vuln.assets.all()
+
+    def test_security_exceptions_linked_by_ref_id(
+        self, api_client, domain_folder, all_accessible
+    ):
+        SecurityException.objects.create(
+            name="Risk Accepted", ref_id="SE-VUL-01", folder=domain_folder
+        )
+        _post(
+            api_client,
+            _csv("name,ref_id,security_exceptions\nMeltdown,CVE-FC-06,SE-VUL-01\n"),
+            "a.csv",
+            "Vulnerability",
+            domain_folder.id,
+        )
+        vuln = Vulnerability.objects.get(ref_id="CVE-FC-06")
+        assert (
+            SecurityException.objects.get(ref_id="SE-VUL-01")
+            in vuln.security_exceptions.all()
+        )
+
+
+@pytest.mark.django_db
+class TestFolderEndpoint:
+    def test_create_folder_in_domain(self, api_client, domain_folder, all_accessible):
+        resp = _post(
+            api_client,
+            _csv("name,domain\nNew Sub-Folder,Test Domain\n"),
+            "folders.csv",
+            "Folder",
+            domain_folder.id,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["results"]["created"] == 1
+        from iam.models import Folder
+
+        created = Folder.objects.get(name="New Sub-Folder")
+        assert created.parent_folder == domain_folder
+
+    def test_create_folder_without_domain_uses_root(
+        self, api_client, root_folder, all_accessible
+    ):
+        resp = _post(
+            api_client,
+            _csv("name\nOrphan Folder\n"),
+            "folders.csv",
+            "Folder",
+            root_folder.id,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["results"]["created"] == 1
+        from iam.models import Folder
+
+        created = Folder.objects.get(name="Orphan Folder")
+        assert created.parent_folder == root_folder
 
 
 # ─────────────────────────────────────────────────────────────────────────────
