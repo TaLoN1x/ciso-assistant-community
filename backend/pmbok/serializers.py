@@ -2,7 +2,15 @@ from rest_framework import serializers
 
 from core.serializers import BaseModelSerializer
 from core.serializer_fields import FieldsRelatedField, PathField
-from pmbok.models import GenericCollection, Accreditation
+from pmbok.models import (
+    GenericCollection,
+    Accreditation,
+    ResponsibilityRole,
+    ResponsibilityMatrix,
+    ResponsibilityActivity,
+    ResponsibilityMatrixActor,
+    ResponsibilityAssignment,
+)
 
 
 class GenericCollectionReadSerializer(BaseModelSerializer):
@@ -102,4 +110,118 @@ class AccreditationWriteSerializer(BaseModelSerializer):
                 months=duration_months
             )
 
+        return super().validate(data)
+
+
+class ResponsibilityRoleReadSerializer(BaseModelSerializer):
+    folder = FieldsRelatedField()
+
+    class Meta:
+        model = ResponsibilityRole
+        fields = "__all__"
+
+
+class ResponsibilityRoleWriteSerializer(BaseModelSerializer):
+    class Meta:
+        model = ResponsibilityRole
+        fields = "__all__"
+
+
+class ResponsibilityMatrixReadSerializer(BaseModelSerializer):
+    path = PathField(read_only=True)
+    folder = FieldsRelatedField()
+    roles = FieldsRelatedField(
+        ["id", "code", "name", "color", "order", "taxonomy"], many=True
+    )
+    filtering_labels = FieldsRelatedField(["id", "folder"], many=True)
+    activities_count = serializers.SerializerMethodField()
+
+    def get_activities_count(self, obj):
+        return obj.activities.count()
+
+    class Meta:
+        model = ResponsibilityMatrix
+        fields = "__all__"
+
+
+class ResponsibilityMatrixWriteSerializer(BaseModelSerializer):
+    class Meta:
+        model = ResponsibilityMatrix
+        fields = "__all__"
+
+    def create(self, validated_data):
+        roles = validated_data.pop("roles", None)
+        instance = super().create(validated_data)
+        preset = instance.preset
+        if not roles and preset != ResponsibilityMatrix.Preset.CUSTOM:
+            instance.roles.set(
+                ResponsibilityRole.objects.filter(
+                    taxonomy=preset, builtin=True, is_visible=True
+                )
+            )
+        elif roles:
+            instance.roles.set(roles)
+        return instance
+
+
+class ResponsibilityActivityReadSerializer(BaseModelSerializer):
+    matrix = FieldsRelatedField()
+    assignments_count = serializers.SerializerMethodField()
+
+    def get_assignments_count(self, obj):
+        return obj.assignments.count()
+
+    class Meta:
+        model = ResponsibilityActivity
+        fields = "__all__"
+
+
+class ResponsibilityActivityWriteSerializer(BaseModelSerializer):
+    class Meta:
+        model = ResponsibilityActivity
+        fields = "__all__"
+
+
+class ResponsibilityMatrixActorReadSerializer(BaseModelSerializer):
+    matrix = FieldsRelatedField()
+    actor = FieldsRelatedField()
+
+    class Meta:
+        model = ResponsibilityMatrixActor
+        fields = "__all__"
+
+
+class ResponsibilityMatrixActorWriteSerializer(BaseModelSerializer):
+    class Meta:
+        model = ResponsibilityMatrixActor
+        fields = "__all__"
+
+
+class ResponsibilityAssignmentReadSerializer(BaseModelSerializer):
+    activity = FieldsRelatedField()
+    actor = FieldsRelatedField()
+    role = FieldsRelatedField(["id", "code", "name", "color"])
+
+    class Meta:
+        model = ResponsibilityAssignment
+        fields = "__all__"
+
+
+class ResponsibilityAssignmentWriteSerializer(BaseModelSerializer):
+    class Meta:
+        model = ResponsibilityAssignment
+        fields = "__all__"
+
+    def validate(self, data):
+        activity = data.get(
+            "activity", getattr(getattr(self, "instance", None), "activity", None)
+        )
+        role = data.get("role", getattr(getattr(self, "instance", None), "role", None))
+        if activity and role and role not in activity.matrix.roles.all():
+            raise serializers.ValidationError(
+                {
+                    "role": "Role is not part of this matrix's taxonomy. "
+                    "Add it to the matrix first or pick a role already attached."
+                }
+            )
         return super().validate(data)

@@ -2716,6 +2716,29 @@ export const listViewFields = {
 			filtering_labels: LABELS_FILTER
 		}
 	},
+	'responsibility-matrices': {
+		head: ['ref_id', 'name', 'preset', 'activities_count', 'folder'],
+		body: ['ref_id', 'name', 'preset', 'activities_count', 'folder'],
+		filters: {
+			folder: DOMAIN_FILTER,
+			filtering_labels: LABELS_FILTER
+		}
+	},
+	'responsibility-roles': {
+		head: ['code', 'name', 'taxonomy', 'color', 'order', 'builtin'],
+		body: ['code', 'name', 'taxonomy', 'color', 'order', 'builtin'],
+		filters: {}
+	},
+	'responsibility-activities': {
+		head: ['name', 'description', 'order', 'matrix'],
+		body: ['name', 'description', 'order', 'matrix'],
+		filters: {}
+	},
+	'responsibility-assignments': {
+		head: ['activity', 'actor', 'role'],
+		body: ['activity', 'actor', 'role'],
+		filters: {}
+	},
 	'metric-definitions': {
 		head: ['ref_id', 'name', 'description', 'category', 'unit', 'provider', 'labels', 'folder'],
 		body: [
