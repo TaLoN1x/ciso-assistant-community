@@ -839,14 +839,7 @@
 				{context}
 			/>
 		{:else if URLModel === 'responsibility-roles'}
-			<ResponsibilityRoleForm
-				{form}
-				{model}
-				{cacheLocks}
-				{formDataCache}
-				{initialData}
-				{object}
-			/>
+			<ResponsibilityRoleForm {form} {model} {cacheLocks} {formDataCache} {initialData} {object} />
 		{:else if URLModel === 'metric-definitions'}
 			<MetricDefinitionForm
 				{form}

@@ -90,8 +90,4 @@
 	label={m.order()}
 />
 
-<Checkbox
-	{form}
-	field="is_visible"
-	label={m.isVisible()}
-/>
+<Checkbox {form} field="is_visible" label={m.isVisible()} />

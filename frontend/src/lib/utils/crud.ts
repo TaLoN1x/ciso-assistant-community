@@ -2683,9 +2683,7 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'is_visible' }
 		],
 		foreignKeyFields: [{ field: 'folder', urlModel: 'folders' }],
-		selectFields: [
-			{ field: 'taxonomy', endpointUrl: 'pmbok/responsibility-roles' }
-		],
+		selectFields: [{ field: 'taxonomy', endpointUrl: 'pmbok/responsibility-roles' }],
 		filters: [{ field: 'folder' }, { field: 'taxonomy' }, { field: 'is_visible' }]
 	},
 	'responsibility-matrices': {

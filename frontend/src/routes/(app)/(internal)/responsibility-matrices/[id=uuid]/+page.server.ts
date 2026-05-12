@@ -46,9 +46,7 @@ export const load: PageServerLoad = async (event) => {
 		event.fetch(
 			`${BASE_API_URL}/pmbok/responsibility-matrix-actors/?matrix=${matrixId}&ordering=order`
 		),
-		event.fetch(
-			`${BASE_API_URL}/pmbok/responsibility-assignments/?activity__matrix=${matrixId}`
-		),
+		event.fetch(`${BASE_API_URL}/pmbok/responsibility-assignments/?activity__matrix=${matrixId}`),
 		event.fetch(`${BASE_API_URL}/actors/?ordering=user__email`),
 		event.fetch(`${BASE_API_URL}/assets/?ordering=name`),
 		event.fetch(`${BASE_API_URL}/applied-controls/?ordering=name`),
@@ -59,25 +57,25 @@ export const load: PageServerLoad = async (event) => {
 		event.fetch(`${BASE_API_URL}/resilience/business-impact-analysis/?ordering=name`)
 	]);
 
-	const activities = activitiesRes.ok ? (await activitiesRes.json()).results ?? [] : [];
-	const matrixActors = actorsRes.ok ? (await actorsRes.json()).results ?? [] : [];
-	const assignments = assignmentsRes.ok ? (await assignmentsRes.json()).results ?? [] : [];
-	const allActors = allActorsRes.ok ? (await allActorsRes.json()).results ?? [] : [];
-	const allAssets = assetsRes.ok ? (await assetsRes.json()).results ?? [] : [];
-	const allAppliedControls = controlsRes.ok ? (await controlsRes.json()).results ?? [] : [];
+	const activities = activitiesRes.ok ? ((await activitiesRes.json()).results ?? []) : [];
+	const matrixActors = actorsRes.ok ? ((await actorsRes.json()).results ?? []) : [];
+	const assignments = assignmentsRes.ok ? ((await assignmentsRes.json()).results ?? []) : [];
+	const allActors = allActorsRes.ok ? ((await allActorsRes.json()).results ?? []) : [];
+	const allAssets = assetsRes.ok ? ((await assetsRes.json()).results ?? []) : [];
+	const allAppliedControls = controlsRes.ok ? ((await controlsRes.json()).results ?? []) : [];
 	const allTaskTemplates = taskTemplatesRes.ok
-		? (await taskTemplatesRes.json()).results ?? []
+		? ((await taskTemplatesRes.json()).results ?? [])
 		: [];
 	const allRiskAssessments = riskAssessmentsRes.ok
-		? (await riskAssessmentsRes.json()).results ?? []
+		? ((await riskAssessmentsRes.json()).results ?? [])
 		: [];
 	const allComplianceAssessments = complianceAssessmentsRes.ok
-		? (await complianceAssessmentsRes.json()).results ?? []
+		? ((await complianceAssessmentsRes.json()).results ?? [])
 		: [];
 	const allFindingsAssessments = findingsAssessmentsRes.ok
-		? (await findingsAssessmentsRes.json()).results ?? []
+		? ((await findingsAssessmentsRes.json()).results ?? [])
 		: [];
-	const allBusinessImpactAnalyses = biasRes.ok ? (await biasRes.json()).results ?? [] : [];
+	const allBusinessImpactAnalyses = biasRes.ok ? ((await biasRes.json()).results ?? []) : [];
 
 	const linkedObjectsForm = await superValidate(zod(linkedObjectsSchema), { errors: false });
 

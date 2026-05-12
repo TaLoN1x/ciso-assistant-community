@@ -130,7 +130,7 @@
 	// ----- Drawer state -----
 	let drawerActivityId = $state<string | null>(null);
 	const drawerActivity = $derived(
-		drawerActivityId ? activities.find((a) => a.id === drawerActivityId) ?? null : null
+		drawerActivityId ? (activities.find((a) => a.id === drawerActivityId) ?? null) : null
 	);
 	let drawerDescription = $state('');
 	let drawerDescriptionPreview = $state(true);
@@ -161,7 +161,10 @@
 		for (const field of LINK_FIELDS) {
 			const current = (activity[field] ?? []).map((r) => r.id).sort();
 			const next = (($f as any)[field] ?? []).slice().sort();
-			if (current.length !== next.length || current.some((id: string, i: number) => id !== next[i])) {
+			if (
+				current.length !== next.length ||
+				current.some((id: string, i: number) => id !== next[i])
+			) {
 				patch[field] = ($f as any)[field] ?? [];
 			}
 		}
@@ -314,8 +317,7 @@
 				type: 'confirm',
 				title: m.confirmDeleteTitle?.() ?? 'Delete',
 				body:
-					m.areYouSureToDeleteObject?.({ object: activity.name }) ??
-					`Delete "${activity.name}"?`,
+					m.areYouSureToDeleteObject?.({ object: activity.name }) ?? `Delete "${activity.name}"?`,
 				response: (r: boolean) => resolve(r)
 			};
 			modalStore.trigger(modal);
@@ -392,9 +394,7 @@
 				);
 			} else if (existing) {
 				assignments = assignments.map((a) =>
-					a.activity.id === activity.id && a.actor.id === actor.id
-						? { ...a, role: result.role }
-						: a
+					a.activity.id === activity.id && a.actor.id === actor.id ? { ...a, role: result.role } : a
 				);
 			} else {
 				assignments = [
@@ -496,7 +496,10 @@
 				<span class="stat-sep">/</span>
 				<span class="stat"><b>{matrixActors.length}</b> {m.actors()}</span>
 				<span class="stat-sep">/</span>
-				<span class="stat"><b>{filledCount}</b><span class="stat-faint">/{gridTotal || 0}</span> {m.cellsFilled()}</span>
+				<span class="stat"
+					><b>{filledCount}</b><span class="stat-faint">/{gridTotal || 0}</span>
+					{m.cellsFilled()}</span
+				>
 			</div>
 		</div>
 
@@ -631,7 +634,10 @@
 							</td>
 							{#each matrixActors as ma (ma.id)}
 								{@const cell = cellMap.get(`${activity.id}::${ma.actor.id}`)}
-								<td class="cell" style:background-color={cell ? tint(cell.role.color, 9) : 'transparent'}>
+								<td
+									class="cell"
+									style:background-color={cell ? tint(cell.role.color, 9) : 'transparent'}
+								>
 									<button
 										class="cell-btn"
 										class:filled={!!cell}
@@ -734,7 +740,9 @@
 							{#if drawerDescription}
 								<MarkdownRenderer content={drawerDescription} />
 							{:else}
-								<p class="drawer-empty">No description yet — click <i class="fa-solid fa-pen"></i> Edit to add one.</p>
+								<p class="drawer-empty">
+									No description yet — click <i class="fa-solid fa-pen"></i> Edit to add one.
+								</p>
 							{/if}
 						</div>
 					{:else}
@@ -1137,7 +1145,10 @@
 		border-radius: 50%;
 		opacity: 0;
 		transform: scale(0.85);
-		transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+		transition:
+			opacity 0.15s ease,
+			transform 0.15s ease,
+			color 0.15s ease;
 		cursor: pointer;
 	}
 	:global(.dark) .actor-remove {
@@ -1170,7 +1181,9 @@
 		transition: background 0.12s ease;
 	}
 	.row-activity.drag-over .cell-activity {
-		box-shadow: 1px 0 0 var(--color-surface-300), inset 0 2px 0 var(--color-primary-500);
+		box-shadow:
+			1px 0 0 var(--color-surface-300),
+			inset 0 2px 0 var(--color-primary-500);
 	}
 	.row-activity.dragging {
 		opacity: 0.4;
@@ -1279,7 +1292,10 @@
 		border-radius: 0.25rem;
 		cursor: pointer;
 		opacity: 0;
-		transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+		transition:
+			opacity 0.15s ease,
+			color 0.15s ease,
+			background 0.15s ease;
 	}
 	.row-activity:hover .activity-delete,
 	.row-activity:hover .activity-details {
@@ -1411,7 +1427,9 @@
 		font-size: 0.88rem;
 		color: var(--color-surface-900);
 		outline: 0;
-		transition: border-color 0.15s ease, background 0.15s ease;
+		transition:
+			border-color 0.15s ease,
+			background 0.15s ease;
 	}
 	:global(.dark) .add-input {
 		color: var(--color-surface-100);
@@ -1550,8 +1568,12 @@
 		animation: drawer-fade 0.18s ease;
 	}
 	@keyframes drawer-fade {
-		from { opacity: 0; }
-		to { opacity: 1; }
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
 	}
 	.drawer {
 		position: fixed;
@@ -1573,8 +1595,12 @@
 		border-left-color: var(--color-surface-700);
 	}
 	@keyframes drawer-slide {
-		from { transform: translateX(100%); }
-		to { transform: translateX(0); }
+		from {
+			transform: translateX(100%);
+		}
+		to {
+			transform: translateX(0);
+		}
 	}
 
 	.drawer-header {
@@ -1651,7 +1677,9 @@
 		border-radius: 0.4rem;
 		color: var(--color-surface-500);
 		cursor: pointer;
-		transition: background 0.15s ease, color 0.15s ease;
+		transition:
+			background 0.15s ease,
+			color 0.15s ease;
 	}
 	.drawer-close:hover {
 		background: color-mix(in oklch, var(--color-surface-300) 50%, transparent);
@@ -1723,7 +1751,9 @@
 		border-radius: 0.3rem;
 		cursor: pointer;
 		color: var(--color-surface-600);
-		transition: background 0.15s ease, color 0.15s ease;
+		transition:
+			background 0.15s ease,
+			color 0.15s ease;
 	}
 	.drawer-md-toggle button.active {
 		background: var(--color-surface-50);
@@ -1829,7 +1859,9 @@
 		border-radius: 50%;
 		color: var(--color-surface-500);
 		cursor: pointer;
-		transition: background 0.12s ease, color 0.12s ease;
+		transition:
+			background 0.12s ease,
+			color 0.12s ease;
 	}
 	.drawer-chip-remove:hover {
 		background: var(--color-error-500, #ef4444);
@@ -1845,7 +1877,9 @@
 		font-size: 0.82rem;
 		color: var(--color-surface-700);
 		cursor: pointer;
-		transition: border-color 0.15s ease, background 0.15s ease;
+		transition:
+			border-color 0.15s ease,
+			background 0.15s ease;
 	}
 	.drawer-link-picker:hover {
 		border-color: var(--color-primary-500);

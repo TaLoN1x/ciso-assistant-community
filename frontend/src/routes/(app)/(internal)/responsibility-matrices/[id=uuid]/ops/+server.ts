@@ -67,11 +67,7 @@ export const POST: RequestHandler = async ({ fetch, params, request, url }) => {
 		}
 
 		case 'delete-activity':
-			return proxy(
-				fetch,
-				`${BASE_API_URL}/pmbok/responsibility-activities/${body.id}/`,
-				'DELETE'
-			);
+			return proxy(fetch, `${BASE_API_URL}/pmbok/responsibility-activities/${body.id}/`, 'DELETE');
 
 		case 'create-actor':
 			return proxy(fetch, `${BASE_API_URL}/pmbok/responsibility-matrix-actors/`, 'POST', {
