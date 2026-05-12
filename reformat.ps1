@@ -60,16 +60,16 @@ Invoke-InDirectory -Directory $FrontendDir -ScriptBlock {
     Write-Host "Formatting frontend..." -ForegroundColor Cyan
     Invoke-CheckedCommand -FilePath "pnpm" -ArgumentList @("exec", "prettier", ".", "--write") -CommandName "pnpm exec prettier . --write"
 
-    Write-Host "Formatting enterprise frontend..." -ForegroundColor Cyan
+    Write-Host "`nFormatting enterprise frontend..." -ForegroundColor Cyan
     Invoke-CheckedCommand -FilePath "pnpm" -ArgumentList @("exec", "prettier", $EnterpriseFrontendSrcDir, "--write") -CommandName "pnpm exec prettier enterprise frontend --write"
 }
 
 Invoke-InDirectory -Directory $BackendDir -ScriptBlock {
-    Write-Host "Formatting backend..." -ForegroundColor Cyan
+    Write-Host "`nFormatting backend..." -ForegroundColor Cyan
     Invoke-CheckedCommand -FilePath "ruff" -ArgumentList @("format", ".") -CommandName "ruff format backend"
 }
 
 Invoke-InDirectory -Directory $EnterpriseBackendDir -ScriptBlock {
-    Write-Host "Formatting enterprise backend..." -ForegroundColor Cyan
+    Write-Host "`nFormatting enterprise backend..." -ForegroundColor Cyan
     Invoke-CheckedCommand -FilePath "ruff" -ArgumentList @("format", ".") -CommandName "ruff format enterprise backend"
 }
