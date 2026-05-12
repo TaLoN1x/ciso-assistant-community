@@ -166,6 +166,13 @@ class ResponsibilityMatrixWriteSerializer(BaseModelSerializer):
 
 class ResponsibilityActivityReadSerializer(BaseModelSerializer):
     matrix = FieldsRelatedField()
+    assets = FieldsRelatedField(many=True)
+    applied_controls = FieldsRelatedField(many=True)
+    task_templates = FieldsRelatedField(many=True)
+    risk_assessments = FieldsRelatedField(many=True)
+    compliance_assessments = FieldsRelatedField(many=True)
+    findings_assessments = FieldsRelatedField(many=True)
+    business_impact_analyses = FieldsRelatedField(many=True)
     assignments_count = serializers.SerializerMethodField()
 
     def get_assignments_count(self, obj):

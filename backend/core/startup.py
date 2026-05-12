@@ -1677,6 +1677,13 @@ def startup(sender: AppConfig, **kwargs):
     except Exception as e:
         logger.error("Error creating default Metric Units", exc_info=True)
 
+    try:
+        from pmbok.models import ResponsibilityRole
+
+        ResponsibilityRole.create_default_roles()
+    except Exception as e:
+        logger.error("Error creating default Responsibility Roles", exc_info=True)
+
     # Init integration providers
 
     try:

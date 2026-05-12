@@ -116,7 +116,7 @@ class ResponsibilityMatrixViewSet(BaseModelViewSet):
         Order: empty -> matrix.roles[0] -> matrix.roles[1] -> ... -> empty.
 
         Request body: {"activity": <uuid>, "actor": <uuid>, "direction": "forward"|"backward"}
-        Returns: {"role": {id, code, name, color} | null}
+        Returns: {"role": {id, code, name, color} | null, "assignment_id": <uuid> | null}
         """
         matrix = self.get_object()
         activity_id = request.data.get("activity")
@@ -133,6 +133,15 @@ class ResponsibilityMatrixViewSet(BaseModelViewSet):
         except ResponsibilityActivity.DoesNotExist:
             return Response(
                 {"detail": "activity does not belong to this matrix"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Reject cells for actors that aren't attached to this matrix.
+        # Without this, clients could create assignments for off-matrix actors
+        # — the UI would hide them but the rows would persist in the DB.
+        if not matrix.matrix_actors.filter(actor_id=actor_id).exists():
+            return Response(
+                {"detail": "actor is not a member of this matrix"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -163,13 +172,14 @@ class ResponsibilityMatrixViewSet(BaseModelViewSet):
             if next_role is None:
                 if existing:
                     existing.delete()
-                payload = {"role": None}
+                payload = {"role": None, "assignment_id": None}
             else:
                 if existing:
                     existing.role = next_role
                     existing.save(update_fields=["role", "updated_at"])
+                    assignment = existing
                 else:
-                    ResponsibilityAssignment.objects.create(
+                    assignment = ResponsibilityAssignment.objects.create(
                         activity=activity, actor_id=actor_id, role=next_role
                     )
                 payload = {
@@ -178,7 +188,8 @@ class ResponsibilityMatrixViewSet(BaseModelViewSet):
                         "code": next_role.code,
                         "name": next_role.name,
                         "color": next_role.color,
-                    }
+                    },
+                    "assignment_id": str(assignment.id),
                 }
 
         return Response(payload)

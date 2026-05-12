@@ -1,3 +1,11 @@
+// Inline-editor proxy for the matrix detail page.
+//
+// Most CRUD in this codebase goes through SvelteKit form actions plus
+// `nestedWriteFormAction` (see e.g. `risk-assessments/[id]/+page.server.ts`).
+// We bypass that here because the matrix-editor UX is built around fast JSON
+// mutations (cell-cycle, drag-reorder, inline add) that don't fit the form
+// submission round-trip. Each action proxies straight to the backend.
+
 import { BASE_API_URL } from '$lib/utils/constants';
 import { error, json, type NumericRange } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
@@ -33,13 +41,30 @@ export const POST: RequestHandler = async ({ fetch, params, request, url }) => {
 				order: body.order ?? 0
 			});
 
-		case 'update-activity':
+		case 'update-activity': {
+			// Forward only fields that were explicitly provided so we don't accidentally
+			// clear M2Ms that weren't touched.
+			const patch: Record<string, unknown> = {};
+			for (const k of [
+				'name',
+				'description',
+				'assets',
+				'applied_controls',
+				'task_templates',
+				'risk_assessments',
+				'compliance_assessments',
+				'findings_assessments',
+				'business_impact_analyses'
+			]) {
+				if (k in body) patch[k] = body[k];
+			}
 			return proxy(
 				fetch,
 				`${BASE_API_URL}/pmbok/responsibility-activities/${body.id}/`,
 				'PATCH',
-				{ name: body.name, description: body.description }
+				patch
 			);
+		}
 
 		case 'delete-activity':
 			return proxy(

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import DetailView from '$lib/components/DetailView/DetailView.svelte';
+	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+	import AutocompleteSelect from '$lib/components/Forms/AutocompleteSelect.svelte';
 	import {
 		getModalStore,
 		type ModalSettings,
@@ -7,7 +9,16 @@
 	} from '$lib/components/Modals/stores';
 	import { invalidateAll } from '$app/navigation';
 	import { m } from '$paraglide/messages';
+	import { safeTranslate } from '$lib/utils/i18n';
+	import { superForm } from 'sveltekit-superforms';
+	import { get } from 'svelte/store';
 	import type { PageData } from './$types';
+
+	function roleLabel(role: { name: string }): string {
+		// Role names are stored canonically in English ("responsible", "informed"…).
+		// Prefix with role_ to namespace away from unrelated globals (e.g. "support" elsewhere).
+		return safeTranslate('role_' + role.name);
+	}
 
 	interface Role {
 		id: string;
@@ -16,12 +27,41 @@
 		color?: string;
 		order?: number;
 	}
+	interface LinkedRef {
+		id: string;
+		str: string;
+	}
 	interface Activity {
 		id: string;
 		name: string;
 		description?: string;
 		order: number;
+		assets?: LinkedRef[];
+		applied_controls?: LinkedRef[];
+		task_templates?: LinkedRef[];
+		risk_assessments?: LinkedRef[];
+		compliance_assessments?: LinkedRef[];
+		findings_assessments?: LinkedRef[];
+		business_impact_analyses?: LinkedRef[];
 	}
+
+	type LinkField =
+		| 'assets'
+		| 'applied_controls'
+		| 'task_templates'
+		| 'risk_assessments'
+		| 'compliance_assessments'
+		| 'findings_assessments'
+		| 'business_impact_analyses';
+	const LINK_FIELDS: LinkField[] = [
+		'assets',
+		'applied_controls',
+		'task_templates',
+		'risk_assessments',
+		'compliance_assessments',
+		'findings_assessments',
+		'business_impact_analyses'
+	];
 	interface MatrixActor {
 		id: string;
 		actor: { id: string; str: string };
@@ -45,14 +85,138 @@
 	let activities = $state<Activity[]>([]);
 	let matrixActors = $state<MatrixActor[]>([]);
 	let assignments = $state<Assignment[]>([]);
-	let allActors = $state<Array<{ id: string; str: string }>>([]);
+	let allActors = $state<LinkedRef[]>([]);
+	let allAssets = $state<LinkedRef[]>([]);
+	let allAppliedControls = $state<LinkedRef[]>([]);
+	let allTaskTemplates = $state<LinkedRef[]>([]);
+	let allRiskAssessments = $state<LinkedRef[]>([]);
+	let allComplianceAssessments = $state<LinkedRef[]>([]);
+	let allFindingsAssessments = $state<LinkedRef[]>([]);
+	let allBusinessImpactAnalyses = $state<LinkedRef[]>([]);
 
 	$effect(() => {
 		activities = (data.activities ?? []) as Activity[];
 		matrixActors = (data.matrixActors ?? []) as MatrixActor[];
 		assignments = (data.assignments ?? []) as Assignment[];
-		allActors = (data.allActors ?? []) as Array<{ id: string; str: string }>;
+		allActors = (data.allActors ?? []) as LinkedRef[];
+		allAssets = (data.allAssets ?? []) as LinkedRef[];
+		allAppliedControls = (data.allAppliedControls ?? []) as LinkedRef[];
+		allTaskTemplates = (data.allTaskTemplates ?? []) as LinkedRef[];
+		allRiskAssessments = (data.allRiskAssessments ?? []) as LinkedRef[];
+		allComplianceAssessments = (data.allComplianceAssessments ?? []) as LinkedRef[];
+		allFindingsAssessments = (data.allFindingsAssessments ?? []) as LinkedRef[];
+		allBusinessImpactAnalyses = (data.allBusinessImpactAnalyses ?? []) as LinkedRef[];
 	});
+
+	function poolFor(field: LinkField): LinkedRef[] {
+		switch (field) {
+			case 'assets':
+				return allAssets;
+			case 'applied_controls':
+				return allAppliedControls;
+			case 'task_templates':
+				return allTaskTemplates;
+			case 'risk_assessments':
+				return allRiskAssessments;
+			case 'compliance_assessments':
+				return allComplianceAssessments;
+			case 'findings_assessments':
+				return allFindingsAssessments;
+			case 'business_impact_analyses':
+				return allBusinessImpactAnalyses;
+		}
+	}
+
+	// ----- Drawer state -----
+	let drawerActivityId = $state<string | null>(null);
+	const drawerActivity = $derived(
+		drawerActivityId ? activities.find((a) => a.id === drawerActivityId) ?? null : null
+	);
+	let drawerDescription = $state('');
+	let drawerDescriptionPreview = $state(true);
+	let drawerSaving = $state(false);
+
+	// Single client-side SuperForm fed by AutocompleteSelect for the three M2M sections.
+	// Values are re-set when the drawer opens for a different activity.
+	const linksSuperForm = superForm(data.linkedObjectsForm, {
+		dataType: 'json',
+		taintedMessage: false,
+		SPA: true
+	});
+	const linksForm = linksSuperForm.form;
+
+	// Suppress the synthetic emission that fires when we programmatically set the form
+	// in openDrawer(). Real user edits come AFTER and should auto-save.
+	let suppressNextLinksUpdate = $state(0);
+
+	linksForm.subscribe(($f) => {
+		if (suppressNextLinksUpdate > 0) {
+			suppressNextLinksUpdate -= 1;
+			return;
+		}
+		if (!drawerActivityId) return;
+		const activity = activities.find((a) => a.id === drawerActivityId);
+		if (!activity) return;
+		const patch: Record<string, string[]> = {};
+		for (const field of LINK_FIELDS) {
+			const current = (activity[field] ?? []).map((r) => r.id).sort();
+			const next = (($f as any)[field] ?? []).slice().sort();
+			if (current.length !== next.length || current.some((id: string, i: number) => id !== next[i])) {
+				patch[field] = ($f as any)[field] ?? [];
+			}
+		}
+		if (Object.keys(patch).length === 0) return;
+		saveLinks(drawerActivityId, patch);
+	});
+
+	async function saveLinks(activityId: string, patch: Record<string, string[]>) {
+		try {
+			await ops('update-activity', { id: activityId, ...patch });
+			activities = activities.map((a) => {
+				if (a.id !== activityId) return a;
+				const next = { ...a };
+				for (const [field, ids] of Object.entries(patch)) {
+					const pool = poolFor(field as LinkField);
+					(next as any)[field] = ids
+						.map((id) => pool.find((p) => p.id === id))
+						.filter(Boolean) as LinkedRef[];
+				}
+				return next;
+			});
+		} catch (e) {
+			console.error(e);
+		}
+	}
+
+	function openDrawer(activity: Activity) {
+		drawerActivityId = activity.id;
+		drawerDescription = activity.description ?? '';
+		drawerDescriptionPreview = true;
+		suppressNextLinksUpdate += 1;
+		const initial: Record<string, string[]> = {};
+		for (const field of LINK_FIELDS) {
+			initial[field] = (activity[field] ?? []).map((r) => r.id);
+		}
+		linksForm.set(initial as any);
+	}
+	function closeDrawer() {
+		drawerActivityId = null;
+	}
+
+	async function saveDescription() {
+		if (!drawerActivity) return;
+		const id = drawerActivity.id;
+		const description = drawerDescription;
+		drawerSaving = true;
+		try {
+			await ops('update-activity', { id, description });
+			activities = activities.map((a) => (a.id === id ? { ...a, description } : a));
+		} catch (e) {
+			console.error(e);
+		} finally {
+			drawerSaving = false;
+		}
+	}
 
 	const availableActors = $derived(
 		allActors.filter((a) => !matrixActors.some((ma) => ma.actor.id === a.id))
@@ -236,7 +400,7 @@
 				assignments = [
 					...assignments,
 					{
-						id: crypto.randomUUID(),
+						id: result.assignment_id,
 						activity: { id: activity.id },
 						actor: { id: actor.id },
 						role: result.role
@@ -330,9 +494,9 @@
 			<div class="matrix-stats">
 				<span class="stat"><b>{activities.length}</b> {m.responsibilityActivities()}</span>
 				<span class="stat-sep">/</span>
-				<span class="stat"><b>{matrixActors.length}</b> actors</span>
+				<span class="stat"><b>{matrixActors.length}</b> {m.actors()}</span>
 				<span class="stat-sep">/</span>
-				<span class="stat"><b>{filledCount}</b><span class="stat-faint">/{gridTotal || 0}</span> cells filled</span>
+				<span class="stat"><b>{filledCount}</b><span class="stat-faint">/{gridTotal || 0}</span> {m.cellsFilled()}</span>
 			</div>
 		</div>
 
@@ -444,6 +608,18 @@
 										</button>
 									{/if}
 									<button
+										class="activity-details"
+										onclick={() => openDrawer(activity)}
+										aria-label="Activity details"
+										title="Open details (description, linked objects)"
+										class:has-details={!!(
+											activity.description ||
+											LINK_FIELDS.some((f) => (activity[f] ?? []).length > 0)
+										)}
+									>
+										<i class="fa-solid fa-circle-info"></i>
+									</button>
+									<button
 										class="activity-delete"
 										onclick={() => deleteActivity(activity)}
 										aria-label="Delete activity"
@@ -462,7 +638,7 @@
 										style:--role-color={cell?.role?.color || '#94a3b8'}
 										onclick={(e) => cycleCell(activity, ma.actor, e)}
 										title={cell
-											? `${cell.role.name} — click to cycle, shift-click to reverse`
+											? `${roleLabel(cell.role)} — click to cycle, shift-click to reverse`
 											: 'Click to assign first role'}
 									>
 										{#if cell}
@@ -507,12 +683,158 @@
 			</table>
 		</div>
 
+		{#if drawerActivity}
+			<div class="drawer-backdrop" onclick={closeDrawer} role="presentation"></div>
+			<aside class="drawer" role="dialog" aria-label="Activity details">
+				<header class="drawer-header">
+					<div class="drawer-title">
+						<div class="drawer-eyebrow">
+							<i class="fa-solid fa-table-cells-large"></i>
+							<span>{matrix.name}</span>
+							<span class="drawer-eyebrow-sep">›</span>
+							<span class="drawer-eyebrow-current">{m.responsibilityActivity()}</span>
+						</div>
+						<h3 class="drawer-name">{drawerActivity.name}</h3>
+					</div>
+					<button class="drawer-close" onclick={closeDrawer} aria-label="Close">
+						<i class="fa-solid fa-xmark"></i>
+					</button>
+				</header>
+
+				<section class="drawer-section">
+					<div class="drawer-section-header">
+						<h4 class="drawer-section-title">{m.description()}</h4>
+						<div class="drawer-md-toggle">
+							<button
+								class:active={!drawerDescriptionPreview}
+								onclick={() => (drawerDescriptionPreview = false)}
+								type="button"
+							>
+								<i class="fa-solid fa-pen"></i> Edit
+							</button>
+							<button
+								class:active={drawerDescriptionPreview}
+								onclick={() => (drawerDescriptionPreview = true)}
+								type="button"
+							>
+								<i class="fa-solid fa-eye"></i> Preview
+							</button>
+						</div>
+					</div>
+					{#if drawerDescriptionPreview}
+						<div
+							class="drawer-md-preview"
+							ondblclick={() => (drawerDescriptionPreview = false)}
+							role="button"
+							tabindex="0"
+							onkeydown={(e) => {
+								if (e.key === 'Enter') drawerDescriptionPreview = false;
+							}}
+						>
+							{#if drawerDescription}
+								<MarkdownRenderer content={drawerDescription} />
+							{:else}
+								<p class="drawer-empty">No description yet — click <i class="fa-solid fa-pen"></i> Edit to add one.</p>
+							{/if}
+						</div>
+					{:else}
+						<textarea
+							class="drawer-md-edit"
+							bind:value={drawerDescription}
+							onblur={saveDescription}
+							placeholder="Use Markdown — # heading, **bold**, [link](url), `code`…"
+						></textarea>
+						<p class="drawer-md-hint">
+							Saves on blur. {drawerSaving ? 'Saving…' : 'Changes are auto-persisted.'}
+						</p>
+					{/if}
+				</section>
+
+				{#snippet linkSection(
+					title: string,
+					field: LinkField,
+					icon: string,
+					endpoint: string,
+					count: number
+				)}
+					<section class="drawer-section">
+						<div class="drawer-section-header">
+							<h4 class="drawer-section-title">
+								<i class={icon}></i>
+								{title}
+								<span class="drawer-count">{count}</span>
+							</h4>
+						</div>
+						<AutocompleteSelect
+							form={linksSuperForm}
+							{field}
+							multiple
+							optionsEndpoint={endpoint}
+							optionsLabelField="auto"
+							label=""
+							placeholder="Search {title.toLowerCase()}…"
+						/>
+					</section>
+				{/snippet}
+
+				{@render linkSection(
+					m.assets(),
+					'assets',
+					'fa-solid fa-cube',
+					'assets',
+					(drawerActivity.assets ?? []).length
+				)}
+				{@render linkSection(
+					m.appliedControls(),
+					'applied_controls',
+					'fa-solid fa-shield-halved',
+					'applied-controls',
+					(drawerActivity.applied_controls ?? []).length
+				)}
+				{@render linkSection(
+					m.taskTemplates(),
+					'task_templates',
+					'fa-solid fa-list-check',
+					'task-templates',
+					(drawerActivity.task_templates ?? []).length
+				)}
+				{@render linkSection(
+					m.riskAssessments(),
+					'risk_assessments',
+					'fa-solid fa-biohazard',
+					'risk-assessments',
+					(drawerActivity.risk_assessments ?? []).length
+				)}
+				{@render linkSection(
+					m.complianceAssessments(),
+					'compliance_assessments',
+					'fa-solid fa-list-check',
+					'compliance-assessments',
+					(drawerActivity.compliance_assessments ?? []).length
+				)}
+				{@render linkSection(
+					m.findingsAssessments(),
+					'findings_assessments',
+					'fa-solid fa-magnifying-glass-chart',
+					'findings-assessments',
+					(drawerActivity.findings_assessments ?? []).length
+				)}
+				{@render linkSection(
+					m.businessImpactAnalyses(),
+					'business_impact_analyses',
+					'fa-solid fa-chart-line',
+					'resilience/business-impact-analysis',
+					(drawerActivity.business_impact_analyses ?? []).length
+				)}
+			</aside>
+		{/if}
+
 		<footer class="matrix-legend">
 			<span class="legend-label">{m.roles()}</span>
 			{#each sortedRoles as r (r.id)}
 				<span class="legend-chip" style:--role-color={r.color || '#6b7280'}>
 					<span class="legend-letter">{r.code}</span>
-					<span class="legend-name">{r.name}</span>
+					<span class="legend-name">{roleLabel(r)}</span>
 					{#if roleCounts[r.id]}
 						<span class="legend-count">{roleCounts[r.id]}</span>
 					{/if}
@@ -945,7 +1267,8 @@
 		background: var(--color-surface-800);
 		color: var(--color-surface-50);
 	}
-	.activity-delete {
+	.activity-delete,
+	.activity-details {
 		width: 1.4rem;
 		height: 1.4rem;
 		display: grid;
@@ -958,12 +1281,22 @@
 		opacity: 0;
 		transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
 	}
-	.row-activity:hover .activity-delete {
+	.row-activity:hover .activity-delete,
+	.row-activity:hover .activity-details {
 		opacity: 1;
 	}
 	.activity-delete:hover {
 		color: var(--color-error-500, #ef4444);
 		background: color-mix(in oklch, var(--color-error-500, #ef4444) 12%, transparent);
+	}
+	.activity-details:hover {
+		color: var(--color-primary-500);
+		background: color-mix(in oklch, var(--color-primary-500) 12%, transparent);
+	}
+	/* Persistent dot when the activity has any details attached */
+	.activity-details.has-details {
+		opacity: 1;
+		color: var(--color-primary-500);
 	}
 
 	/* ----- Cells -------------------------------------------------------- */
@@ -1205,5 +1538,322 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.35rem;
+	}
+
+	/* ----- Drawer ------------------------------------------------------- */
+	.drawer-backdrop {
+		position: fixed;
+		inset: 0;
+		background: color-mix(in oklch, var(--color-surface-950) 35%, transparent);
+		backdrop-filter: blur(2px);
+		z-index: 60;
+		animation: drawer-fade 0.18s ease;
+	}
+	@keyframes drawer-fade {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+	.drawer {
+		position: fixed;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		width: min(520px, 92vw);
+		background: var(--color-surface-50);
+		border-left: 1px solid var(--color-surface-300);
+		box-shadow: -8px 0 32px color-mix(in oklch, var(--color-surface-950) 18%, transparent);
+		z-index: 61;
+		overflow-y: auto;
+		animation: drawer-slide 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+		display: flex;
+		flex-direction: column;
+	}
+	:global(.dark) .drawer {
+		background: var(--color-surface-900);
+		border-left-color: var(--color-surface-700);
+	}
+	@keyframes drawer-slide {
+		from { transform: translateX(100%); }
+		to { transform: translateX(0); }
+	}
+
+	.drawer-header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 1.25rem 1.5rem;
+		border-bottom: 1px solid color-mix(in oklch, var(--color-surface-300) 60%, transparent);
+		position: sticky;
+		top: 0;
+		background: inherit;
+		z-index: 1;
+	}
+	:global(.dark) .drawer-header {
+		border-bottom-color: color-mix(in oklch, var(--color-surface-700) 70%, transparent);
+	}
+	.drawer-title {
+		flex: 1;
+		min-width: 0;
+	}
+	.drawer-eyebrow {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.72rem;
+		color: var(--color-surface-500);
+		max-width: 100%;
+	}
+	.drawer-eyebrow :global(i) {
+		color: var(--color-primary-500);
+		font-size: 0.8rem;
+	}
+	.drawer-eyebrow > span:first-of-type {
+		color: var(--color-surface-700);
+		font-weight: 600;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 18rem;
+	}
+	:global(.dark) .drawer-eyebrow > span:first-of-type {
+		color: var(--color-surface-200);
+	}
+	.drawer-eyebrow-sep {
+		color: var(--color-surface-400);
+	}
+	.drawer-eyebrow-current {
+		font-family: ui-monospace, SFMono-Regular, monospace;
+		font-size: 0.62rem;
+		font-weight: 700;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--color-primary-600);
+	}
+	.drawer-name {
+		font-size: 1.15rem;
+		font-weight: 700;
+		letter-spacing: -0.01em;
+		margin-top: 0.2rem;
+		color: var(--color-surface-950);
+		word-break: break-word;
+	}
+	:global(.dark) .drawer-name {
+		color: var(--color-surface-50);
+	}
+	.drawer-close {
+		width: 2rem;
+		height: 2rem;
+		display: grid;
+		place-items: center;
+		background: transparent;
+		border: 0;
+		border-radius: 0.4rem;
+		color: var(--color-surface-500);
+		cursor: pointer;
+		transition: background 0.15s ease, color 0.15s ease;
+	}
+	.drawer-close:hover {
+		background: color-mix(in oklch, var(--color-surface-300) 50%, transparent);
+		color: var(--color-surface-900);
+	}
+	:global(.dark) .drawer-close:hover {
+		background: color-mix(in oklch, var(--color-surface-700) 50%, transparent);
+		color: var(--color-surface-50);
+	}
+
+	.drawer-section {
+		padding: 1rem 1.5rem;
+		border-bottom: 1px solid color-mix(in oklch, var(--color-surface-200) 60%, transparent);
+	}
+	:global(.dark) .drawer-section {
+		border-bottom-color: color-mix(in oklch, var(--color-surface-700) 50%, transparent);
+	}
+	.drawer-section:last-child {
+		border-bottom: 0;
+	}
+	.drawer-section-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 0.55rem;
+	}
+	.drawer-section-title {
+		font-size: 0.78rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-surface-600);
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	:global(.dark) .drawer-section-title {
+		color: var(--color-surface-300);
+	}
+	.drawer-count {
+		font-family: ui-monospace, SFMono-Regular, monospace;
+		font-size: 0.7rem;
+		padding: 0.05rem 0.4rem;
+		background: color-mix(in oklch, var(--color-primary-500) 12%, transparent);
+		color: var(--color-primary-600);
+		border-radius: 999px;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.drawer-md-toggle {
+		display: inline-flex;
+		gap: 0.25rem;
+		padding: 0.15rem;
+		background: var(--color-surface-100);
+		border-radius: 0.4rem;
+	}
+	:global(.dark) .drawer-md-toggle {
+		background: var(--color-surface-800);
+	}
+	.drawer-md-toggle button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: 0.7rem;
+		padding: 0.25rem 0.6rem;
+		background: transparent;
+		border: 0;
+		border-radius: 0.3rem;
+		cursor: pointer;
+		color: var(--color-surface-600);
+		transition: background 0.15s ease, color 0.15s ease;
+	}
+	.drawer-md-toggle button.active {
+		background: var(--color-surface-50);
+		color: var(--color-surface-900);
+		box-shadow: 0 1px 2px color-mix(in oklch, var(--color-surface-950) 8%, transparent);
+	}
+	:global(.dark) .drawer-md-toggle button.active {
+		background: var(--color-surface-900);
+		color: var(--color-surface-50);
+	}
+
+	.drawer-md-preview {
+		min-height: 6rem;
+		max-height: 60vh;
+		overflow-y: auto;
+		padding: 0.8rem 0.9rem;
+		background: var(--color-surface-50);
+		border: 1px solid color-mix(in oklch, var(--color-surface-300) 60%, transparent);
+		border-radius: 0.5rem;
+		font-size: 0.85rem;
+		line-height: 1.55;
+		cursor: text;
+	}
+	:global(.dark) .drawer-md-preview {
+		background: var(--color-surface-800);
+		border-color: color-mix(in oklch, var(--color-surface-700) 70%, transparent);
+	}
+	.drawer-md-preview :global(p) {
+		margin: 0.4em 0;
+	}
+	.drawer-md-preview :global(p:first-child) {
+		margin-top: 0;
+	}
+	.drawer-md-preview :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.drawer-md-edit {
+		width: 100%;
+		min-height: 9rem;
+		max-height: 50vh;
+		padding: 0.8rem 0.9rem;
+		font-family: ui-monospace, SFMono-Regular, monospace;
+		font-size: 0.8rem;
+		line-height: 1.55;
+		background: var(--color-surface-50);
+		color: var(--color-surface-900);
+		border: 1px solid var(--color-primary-500);
+		border-radius: 0.5rem;
+		outline: 0;
+		resize: vertical;
+		box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary-500) 14%, transparent);
+	}
+	:global(.dark) .drawer-md-edit {
+		background: var(--color-surface-800);
+		color: var(--color-surface-50);
+	}
+	.drawer-md-hint {
+		font-size: 0.7rem;
+		color: var(--color-surface-500);
+		margin-top: 0.45rem;
+	}
+	.drawer-empty {
+		font-size: 0.8rem;
+		color: var(--color-surface-500);
+		font-style: italic;
+	}
+
+	.drawer-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		margin-bottom: 0.5rem;
+	}
+	.drawer-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.2rem 0.25rem 0.2rem 0.55rem;
+		background: color-mix(in oklch, var(--color-primary-500) 9%, transparent);
+		border: 1px solid color-mix(in oklch, var(--color-primary-500) 25%, transparent);
+		border-radius: 999px;
+		font-size: 0.75rem;
+		color: var(--color-surface-900);
+		max-width: 100%;
+	}
+	:global(.dark) .drawer-chip {
+		color: var(--color-surface-50);
+	}
+	.drawer-chip-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 18rem;
+	}
+	.drawer-chip-remove {
+		width: 1.1rem;
+		height: 1.1rem;
+		display: grid;
+		place-items: center;
+		background: transparent;
+		border: 0;
+		border-radius: 50%;
+		color: var(--color-surface-500);
+		cursor: pointer;
+		transition: background 0.12s ease, color 0.12s ease;
+	}
+	.drawer-chip-remove:hover {
+		background: var(--color-error-500, #ef4444);
+		color: white;
+	}
+
+	.drawer-link-picker {
+		width: 100%;
+		padding: 0.5rem 0.65rem;
+		background: var(--color-surface-50);
+		border: 1px dashed var(--color-surface-300);
+		border-radius: 0.45rem;
+		font-size: 0.82rem;
+		color: var(--color-surface-700);
+		cursor: pointer;
+		transition: border-color 0.15s ease, background 0.15s ease;
+	}
+	.drawer-link-picker:hover {
+		border-color: var(--color-primary-500);
+		background: color-mix(in oklch, var(--color-primary-500) 6%, transparent);
+	}
+	:global(.dark) .drawer-link-picker {
+		background: var(--color-surface-800);
+		border-color: var(--color-surface-700);
+		color: var(--color-surface-300);
 	}
 </style>
