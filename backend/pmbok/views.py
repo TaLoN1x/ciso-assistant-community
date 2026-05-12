@@ -263,6 +263,19 @@ class ResponsibilityActivityViewSet(BaseModelViewSet):
     search_fields = ["name", "description"]
     ordering = ["matrix", "order"]
 
+    def update(self, request, *args, **kwargs):
+        # Return the Read serializer shape on PATCH/PUT so the frontend can
+        # rehydrate M2M links as [{id, str}, ...] without needing to
+        # eager-load lookup pools on the matrix detail page. Cuts ~7 slow
+        # fetches per page mount.
+        response = super().update(request, *args, **kwargs)
+        # super().update() already saved the instance; re-read for the Read shape.
+        from pmbok.serializers import ResponsibilityActivityReadSerializer
+
+        instance = self.get_object()
+        response.data = ResponsibilityActivityReadSerializer(instance).data
+        return response
+
 
 class ResponsibilityAssignmentViewSet(BaseModelViewSet):
     """API endpoint for responsibility assignments (read-only).

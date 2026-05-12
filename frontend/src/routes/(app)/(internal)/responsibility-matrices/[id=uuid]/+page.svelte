@@ -77,6 +77,11 @@
 	let { data }: { data: PageData } = $props();
 	const modalStore: ModalStore = getModalStore();
 
+	// Page opens in read-only "view" mode. The user explicitly toggles to edit
+	// mode before any structural change (rename, delete, add, drag) or cell
+	// cycling becomes active. Prevents accidental auto-saves on misclicks.
+	let editMode = $state(false);
+
 	const matrix = $derived(data.data);
 	const matrixId = $derived(matrix.id);
 	const roles = $derived((matrix.roles ?? []) as Role[]);
@@ -86,46 +91,13 @@
 	let matrixActors = $state<MatrixActor[]>([]);
 	let assignments = $state<Assignment[]>([]);
 	let allActors = $state<LinkedRef[]>([]);
-	let allAssets = $state<LinkedRef[]>([]);
-	let allAppliedControls = $state<LinkedRef[]>([]);
-	let allTaskTemplates = $state<LinkedRef[]>([]);
-	let allRiskAssessments = $state<LinkedRef[]>([]);
-	let allComplianceAssessments = $state<LinkedRef[]>([]);
-	let allFindingsAssessments = $state<LinkedRef[]>([]);
-	let allBusinessImpactAnalyses = $state<LinkedRef[]>([]);
 
 	$effect(() => {
 		activities = (data.activities ?? []) as Activity[];
 		matrixActors = (data.matrixActors ?? []) as MatrixActor[];
 		assignments = (data.assignments ?? []) as Assignment[];
 		allActors = (data.allActors ?? []) as LinkedRef[];
-		allAssets = (data.allAssets ?? []) as LinkedRef[];
-		allAppliedControls = (data.allAppliedControls ?? []) as LinkedRef[];
-		allTaskTemplates = (data.allTaskTemplates ?? []) as LinkedRef[];
-		allRiskAssessments = (data.allRiskAssessments ?? []) as LinkedRef[];
-		allComplianceAssessments = (data.allComplianceAssessments ?? []) as LinkedRef[];
-		allFindingsAssessments = (data.allFindingsAssessments ?? []) as LinkedRef[];
-		allBusinessImpactAnalyses = (data.allBusinessImpactAnalyses ?? []) as LinkedRef[];
 	});
-
-	function poolFor(field: LinkField): LinkedRef[] {
-		switch (field) {
-			case 'assets':
-				return allAssets;
-			case 'applied_controls':
-				return allAppliedControls;
-			case 'task_templates':
-				return allTaskTemplates;
-			case 'risk_assessments':
-				return allRiskAssessments;
-			case 'compliance_assessments':
-				return allComplianceAssessments;
-			case 'findings_assessments':
-				return allFindingsAssessments;
-			case 'business_impact_analyses':
-				return allBusinessImpactAnalyses;
-		}
-	}
 
 	// ----- Drawer state -----
 	let drawerActivityId = $state<string | null>(null);
@@ -174,15 +146,17 @@
 
 	async function saveLinks(activityId: string, patch: Record<string, string[]>) {
 		try {
-			await ops('update-activity', { id: activityId, ...patch });
+			// The backend's update() returns the Read-serializer shape with
+			// {id, str} for every M2M link, so we don't need any client-side
+			// lookup pool to rehydrate the chips.
+			const fresh = await ops('update-activity', { id: activityId, ...patch });
 			activities = activities.map((a) => {
 				if (a.id !== activityId) return a;
 				const next = { ...a };
-				for (const [field, ids] of Object.entries(patch)) {
-					const pool = poolFor(field as LinkField);
-					(next as any)[field] = ids
-						.map((id) => pool.find((p) => p.id === id))
-						.filter(Boolean) as LinkedRef[];
+				for (const field of LINK_FIELDS) {
+					if (fresh && fresh[field]) {
+						(next as any)[field] = fresh[field] as LinkedRef[];
+					}
 				}
 				return next;
 			});
@@ -503,21 +477,41 @@
 			</div>
 		</div>
 
-		<div class="actor-picker">
-			<i class="fa-solid fa-user-plus picker-icon"></i>
-			<select class="picker-select" bind:value={actorPickerValue}>
-				<option value={undefined}>{m.addActor?.() ?? 'Add actor…'}</option>
-				{#each availableActors as a (a.id)}
-					<option value={a.id}>{a.str}</option>
-				{/each}
-			</select>
+		<div class="header-toolbar">
+			{#if editMode}
+				<div class="actor-picker">
+					<i class="fa-solid fa-user-plus picker-icon"></i>
+					<select class="picker-select" bind:value={actorPickerValue}>
+						<option value={undefined}>{m.addActor?.() ?? 'Add actor…'}</option>
+						{#each availableActors as a (a.id)}
+							<option value={a.id}>{a.str}</option>
+						{/each}
+					</select>
+					<button
+						class="picker-btn"
+						onclick={addActor}
+						disabled={!actorPickerValue}
+						aria-label={m.addActor?.() ?? 'Add actor'}
+					>
+						<i class="fa-solid fa-arrow-right"></i>
+					</button>
+				</div>
+			{/if}
 			<button
-				class="picker-btn"
-				onclick={addActor}
-				disabled={!actorPickerValue}
-				aria-label={m.addActor?.() ?? 'Add actor'}
+				type="button"
+				class="mode-toggle"
+				class:is-editing={editMode}
+				onclick={() => (editMode = !editMode)}
+				aria-pressed={editMode}
+				title={editMode ? m.done() : m.edit()}
 			>
-				<i class="fa-solid fa-arrow-right"></i>
+				{#if editMode}
+					<i class="fa-solid fa-check"></i>
+					<span>{m.done()}</span>
+				{:else}
+					<i class="fa-solid fa-pen-to-square"></i>
+					<span>{m.edit()}</span>
+				{/if}
 			</button>
 		</div>
 	</header>
@@ -541,25 +535,30 @@
 								class="col-actor"
 								class:drag-over={dragOverActorId === ma.id}
 								class:dragging={draggedActorId === ma.id}
-								draggable="true"
-								ondragstart={() => actorDragStart(ma.id)}
-								ondragover={(e) => actorDragOver(e, ma.id)}
-								ondragleave={() => actorDragLeave(ma.id)}
-								ondrop={(e) => actorDrop(e, ma.id)}
+								class:locked={!editMode}
+								draggable={editMode}
+								ondragstart={editMode ? () => actorDragStart(ma.id) : undefined}
+								ondragover={editMode ? (e) => actorDragOver(e, ma.id) : undefined}
+								ondragleave={editMode ? () => actorDragLeave(ma.id) : undefined}
+								ondrop={editMode ? (e) => actorDrop(e, ma.id) : undefined}
 							>
 								<div class="actor-header">
-									<span class="actor-grip" title={m.dragToReorder()}>
-										<i class="fa-solid fa-grip"></i>
-									</span>
+									{#if editMode}
+										<span class="actor-grip" title={m.dragToReorder()}>
+											<i class="fa-solid fa-grip"></i>
+										</span>
+									{/if}
 									<span class="actor-name" title={ma.actor.str}>{ma.actor.str}</span>
-									<button
-										class="actor-remove"
-										onclick={() => removeActor(ma)}
-										aria-label={m.removeActor()}
-										title={m.removeFromMatrix()}
-									>
-										<i class="fa-solid fa-xmark"></i>
-									</button>
+									{#if editMode}
+										<button
+											class="actor-remove"
+											onclick={() => removeActor(ma)}
+											aria-label={m.removeActor()}
+											title={m.removeFromMatrix()}
+										>
+											<i class="fa-solid fa-xmark"></i>
+										</button>
+									{/if}
 									{#if actorCounts[ma.actor.id]}
 										<span class="actor-count" title={m.responsibilityAssignments()}
 											>{actorCounts[ma.actor.id]}</span
@@ -577,20 +576,23 @@
 							class="row-activity"
 							class:drag-over={dragOverActivityId === activity.id}
 							class:dragging={draggedActivityId === activity.id}
-							ondragover={(e) => actDragOver(e, activity.id)}
-							ondragleave={() => actDragLeave(activity.id)}
-							ondrop={(e) => actDrop(e, activity.id)}
+							class:locked={!editMode}
+							ondragover={editMode ? (e) => actDragOver(e, activity.id) : undefined}
+							ondragleave={editMode ? () => actDragLeave(activity.id) : undefined}
+							ondrop={editMode ? (e) => actDrop(e, activity.id) : undefined}
 						>
 							<td
 								class="cell-activity"
-								draggable="true"
-								ondragstart={() => actDragStart(activity.id)}
+								draggable={editMode}
+								ondragstart={editMode ? () => actDragStart(activity.id) : undefined}
 							>
 								<div class="activity-row">
 									<span class="row-index">{rowIdx + 1}</span>
-									<span class="activity-grip" title={m.dragToReorder()}>
-										<i class="fa-solid fa-grip-vertical"></i>
-									</span>
+									{#if editMode}
+										<span class="activity-grip" title={m.dragToReorder()}>
+											<i class="fa-solid fa-grip-vertical"></i>
+										</span>
+									{/if}
 									{#if editingActivityId === activity.id}
 										<input
 											type="text"
@@ -602,7 +604,7 @@
 												if (e.key === 'Escape') cancelRename();
 											}}
 										/>
-									{:else}
+									{:else if editMode}
 										<button
 											type="button"
 											class="activity-name"
@@ -611,6 +613,8 @@
 										>
 											{activity.name}
 										</button>
+									{:else}
+										<span class="activity-name static">{activity.name}</span>
 									{/if}
 									<button
 										class="activity-details"
@@ -624,14 +628,16 @@
 									>
 										<i class="fa-solid fa-circle-info"></i>
 									</button>
-									<button
-										class="activity-delete"
-										onclick={() => deleteActivity(activity)}
-										aria-label={m.deleteActivity()}
-										title={m.deleteActivity()}
-									>
-										<i class="fa-solid fa-trash-can"></i>
-									</button>
+									{#if editMode}
+										<button
+											class="activity-delete"
+											onclick={() => deleteActivity(activity)}
+											aria-label={m.deleteActivity()}
+											title={m.deleteActivity()}
+										>
+											<i class="fa-solid fa-trash-can"></i>
+										</button>
+									{/if}
 								</div>
 							</td>
 							{#each matrixActors as ma (ma.id)}
@@ -643,11 +649,17 @@
 									<button
 										class="cell-btn"
 										class:filled={!!cell}
+										class:locked={!editMode}
 										style:--role-color={cell?.role?.color || '#94a3b8'}
-										onclick={(e) => cycleCell(activity, ma.actor, e)}
-										title={cell
-											? m.cellCycleTooltip({ role: roleLabel(cell.role) })
-											: m.cellEmptyHint()}
+										onclick={editMode ? (e) => cycleCell(activity, ma.actor, e) : undefined}
+										disabled={!editMode}
+										title={editMode
+											? cell
+												? m.cellCycleTooltip({ role: roleLabel(cell.role) })
+												: m.cellEmptyHint()
+											: cell
+												? roleLabel(cell.role)
+												: ''}
 									>
 										{#if cell}
 											<span class="cell-letter">{cell.role.code}</span>
@@ -660,33 +672,35 @@
 							<td class="col-spacer"></td>
 						</tr>
 					{/each}
-					<tr class="row-add">
-						<td class="cell-activity">
-							<div class="add-row">
-								<span class="add-prefix">
-									<i class="fa-solid fa-plus"></i>
-								</span>
-								<input
-									type="text"
-									class="add-input"
-									placeholder="{m.addResponsibilityActivity()}…"
-									bind:value={newActivityName}
-									onkeydown={(e) => e.key === 'Enter' && createActivity()}
-								/>
-								<button
-									class="add-hint"
-									onclick={createActivity}
-									aria-label={m.addResponsibilityActivity()}
-								>
-									<kbd class="kbd">⏎</kbd>
-								</button>
-							</div>
-						</td>
-						{#each matrixActors as ma (ma.id)}
-							<td class="cell cell-placeholder"></td>
-						{/each}
-						<td class="col-spacer"></td>
-					</tr>
+					{#if editMode}
+						<tr class="row-add">
+							<td class="cell-activity">
+								<div class="add-row">
+									<span class="add-prefix">
+										<i class="fa-solid fa-plus"></i>
+									</span>
+									<input
+										type="text"
+										class="add-input"
+										placeholder="{m.addResponsibilityActivity()}…"
+										bind:value={newActivityName}
+										onkeydown={(e) => e.key === 'Enter' && createActivity()}
+									/>
+									<button
+										class="add-hint"
+										onclick={createActivity}
+										aria-label={m.addResponsibilityActivity()}
+									>
+										<kbd class="kbd">⏎</kbd>
+									</button>
+								</div>
+							</td>
+							{#each matrixActors as ma (ma.id)}
+								<td class="cell cell-placeholder"></td>
+							{/each}
+							<td class="col-spacer"></td>
+						</tr>
+					{/if}
 				</tbody>
 			</table>
 		</div>
@@ -712,34 +726,38 @@
 				<section class="drawer-section">
 					<div class="drawer-section-header">
 						<h4 class="drawer-section-title">{m.description()}</h4>
-						<div class="drawer-md-toggle">
-							<button
-								class:active={!drawerDescriptionPreview}
-								onclick={() => (drawerDescriptionPreview = false)}
-								type="button"
-							>
-								<i class="fa-solid fa-pen"></i>
-								{m.edit()}
-							</button>
-							<button
-								class:active={drawerDescriptionPreview}
-								onclick={() => (drawerDescriptionPreview = true)}
-								type="button"
-							>
-								<i class="fa-solid fa-eye"></i>
-								{m.preview()}
-							</button>
-						</div>
+						{#if editMode}
+							<div class="drawer-md-toggle">
+								<button
+									class:active={!drawerDescriptionPreview}
+									onclick={() => (drawerDescriptionPreview = false)}
+									type="button"
+								>
+									<i class="fa-solid fa-pen"></i>
+									{m.edit()}
+								</button>
+								<button
+									class:active={drawerDescriptionPreview}
+									onclick={() => (drawerDescriptionPreview = true)}
+									type="button"
+								>
+									<i class="fa-solid fa-eye"></i>
+									{m.preview()}
+								</button>
+							</div>
+						{/if}
 					</div>
-					{#if drawerDescriptionPreview}
+					{#if !editMode || drawerDescriptionPreview}
 						<div
 							class="drawer-md-preview"
-							ondblclick={() => (drawerDescriptionPreview = false)}
-							role="button"
-							tabindex="0"
-							onkeydown={(e) => {
-								if (e.key === 'Enter') drawerDescriptionPreview = false;
-							}}
+							ondblclick={editMode ? () => (drawerDescriptionPreview = false) : undefined}
+							role={editMode ? 'button' : undefined}
+							tabindex={editMode ? 0 : undefined}
+							onkeydown={editMode
+								? (e) => {
+										if (e.key === 'Enter') drawerDescriptionPreview = false;
+									}
+								: undefined}
 						>
 							{#if drawerDescription}
 								<MarkdownRenderer content={drawerDescription} />
@@ -783,6 +801,7 @@
 							optionsLabelField="auto"
 							label=""
 							placeholder={m.searchObjectsPlaceholder({ object: title.toLowerCase() })}
+							disabled={!editMode}
 						/>
 					</section>
 				{/snippet}
@@ -960,6 +979,51 @@
 		font-weight: 400;
 	}
 
+	/* ----- View/Edit toggle -------------------------------------------- */
+	.header-toolbar {
+		display: flex;
+		align-items: stretch;
+		gap: 0.5rem;
+	}
+	.mode-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.5rem 0.85rem;
+		font-size: 0.85rem;
+		font-weight: 600;
+		background: var(--color-surface-50);
+		color: var(--color-surface-700);
+		border: 1px solid var(--color-surface-300);
+		border-radius: 0.5rem;
+		cursor: pointer;
+		transition:
+			background 0.15s ease,
+			color 0.15s ease,
+			border-color 0.15s ease,
+			box-shadow 0.15s ease;
+	}
+	.mode-toggle:hover {
+		border-color: var(--color-primary-500);
+		color: var(--color-primary-600);
+	}
+	.mode-toggle.is-editing {
+		background: var(--color-primary-500);
+		color: white;
+		border-color: var(--color-primary-500);
+		box-shadow: 0 1px 2px color-mix(in oklch, var(--color-primary-500) 30%, transparent);
+	}
+	.mode-toggle.is-editing:hover {
+		background: var(--color-primary-600);
+		border-color: var(--color-primary-600);
+		color: white;
+	}
+	:global(.dark) .mode-toggle {
+		background: var(--color-surface-800);
+		color: var(--color-surface-200);
+		border-color: var(--color-surface-700);
+	}
+
 	/* ----- Actor picker ------------------------------------------------- */
 	.actor-picker {
 		display: flex;
@@ -1094,6 +1158,9 @@
 		max-width: 12rem;
 		cursor: move;
 		transition: background 0.15s ease;
+	}
+	.col-actor.locked {
+		cursor: default;
 	}
 	.col-actor.drag-over {
 		background: color-mix(in oklch, var(--color-primary-500) 14%, transparent) !important;
@@ -1266,6 +1333,13 @@
 	.activity-name:hover {
 		background: color-mix(in oklch, var(--color-primary-500) 8%, transparent);
 	}
+	/* In view mode the activity name is a <span>, not a <button> — render it as static text. */
+	.activity-name.static {
+		cursor: default;
+	}
+	.activity-name.static:hover {
+		background: transparent;
+	}
 	.activity-input {
 		flex: 1;
 		padding: 0.25rem 0.35rem;
@@ -1366,6 +1440,21 @@
 		box-shadow:
 			inset 0 1px 0 color-mix(in oklch, white 35%, transparent),
 			0 2px 8px color-mix(in oklch, var(--role-color) 60%, transparent);
+	}
+	/* View mode: cells are static — no hover scale, no dashed border, no grab cursor. */
+	.cell-btn.locked,
+	.cell-btn.locked:hover,
+	.cell-btn.locked:active {
+		cursor: default;
+		transform: none;
+	}
+	.cell-btn.locked:not(.filled):hover {
+		border-color: transparent;
+	}
+	.cell-btn.locked.filled:hover {
+		box-shadow:
+			inset 0 1px 0 color-mix(in oklch, white 30%, transparent),
+			0 1px 2px color-mix(in oklch, var(--role-color) 50%, transparent);
 	}
 	.cell-letter {
 		font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;

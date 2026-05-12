@@ -27,19 +27,14 @@ export const load: PageServerLoad = async (event) => {
 
 	const matrixId = event.params.id;
 
-	const [
-		activitiesRes,
-		actorsRes,
-		assignmentsRes,
-		allActorsRes,
-		assetsRes,
-		controlsRes,
-		taskTemplatesRes,
-		riskAssessmentsRes,
-		complianceAssessmentsRes,
-		findingsAssessmentsRes,
-		biasRes
-	] = await Promise.all([
+	// Eager fetches are limited to what the page renders on mount.
+	// Link-object lookup lists (assets, applied-controls, task-templates,
+	// risk/compliance/findings assessments, BIAs) are NOT fetched here —
+	// AutocompleteSelect inside the activity drawer fetches them on demand
+	// when the user actually opens a drawer, and the PATCH response on
+	// update-activity returns the Read shape so we can rehydrate links
+	// without a separate pool.
+	const [activitiesRes, actorsRes, assignmentsRes, allActorsRes] = await Promise.all([
 		event.fetch(
 			`${BASE_API_URL}/pmbok/responsibility-activities/?matrix=${matrixId}&ordering=order`
 		),
@@ -47,35 +42,13 @@ export const load: PageServerLoad = async (event) => {
 			`${BASE_API_URL}/pmbok/responsibility-matrix-actors/?matrix=${matrixId}&ordering=order`
 		),
 		event.fetch(`${BASE_API_URL}/pmbok/responsibility-assignments/?activity__matrix=${matrixId}`),
-		event.fetch(`${BASE_API_URL}/actors/?ordering=user__email`),
-		event.fetch(`${BASE_API_URL}/assets/?ordering=name`),
-		event.fetch(`${BASE_API_URL}/applied-controls/?ordering=name`),
-		event.fetch(`${BASE_API_URL}/task-templates/?ordering=name`),
-		event.fetch(`${BASE_API_URL}/risk-assessments/?ordering=name`),
-		event.fetch(`${BASE_API_URL}/compliance-assessments/?ordering=name`),
-		event.fetch(`${BASE_API_URL}/findings-assessments/?ordering=name`),
-		event.fetch(`${BASE_API_URL}/resilience/business-impact-analysis/?ordering=name`)
+		event.fetch(`${BASE_API_URL}/actors/?ordering=user__email`)
 	]);
 
 	const activities = activitiesRes.ok ? ((await activitiesRes.json()).results ?? []) : [];
 	const matrixActors = actorsRes.ok ? ((await actorsRes.json()).results ?? []) : [];
 	const assignments = assignmentsRes.ok ? ((await assignmentsRes.json()).results ?? []) : [];
 	const allActors = allActorsRes.ok ? ((await allActorsRes.json()).results ?? []) : [];
-	const allAssets = assetsRes.ok ? ((await assetsRes.json()).results ?? []) : [];
-	const allAppliedControls = controlsRes.ok ? ((await controlsRes.json()).results ?? []) : [];
-	const allTaskTemplates = taskTemplatesRes.ok
-		? ((await taskTemplatesRes.json()).results ?? [])
-		: [];
-	const allRiskAssessments = riskAssessmentsRes.ok
-		? ((await riskAssessmentsRes.json()).results ?? [])
-		: [];
-	const allComplianceAssessments = complianceAssessmentsRes.ok
-		? ((await complianceAssessmentsRes.json()).results ?? [])
-		: [];
-	const allFindingsAssessments = findingsAssessmentsRes.ok
-		? ((await findingsAssessmentsRes.json()).results ?? [])
-		: [];
-	const allBusinessImpactAnalyses = biasRes.ok ? ((await biasRes.json()).results ?? []) : [];
 
 	const linkedObjectsForm = await superValidate(zod(linkedObjectsSchema), { errors: false });
 
@@ -85,13 +58,6 @@ export const load: PageServerLoad = async (event) => {
 		matrixActors,
 		assignments,
 		allActors,
-		allAssets,
-		allAppliedControls,
-		allTaskTemplates,
-		allRiskAssessments,
-		allComplianceAssessments,
-		allFindingsAssessments,
-		allBusinessImpactAnalyses,
 		linkedObjectsForm
 	};
 };
