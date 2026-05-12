@@ -3094,9 +3094,12 @@ class LoadFileView(APIView):
                 ).fillna("")
                 sheet_records = sheet_df.to_dict(orient="records")
 
-                sheet_records = _inject_bia_hint(
-                    sheet_records, bia_name_override or base_name
-                )
+                if bia_name_override:
+                    for record in sheet_records:
+                        record.pop("bia", None)
+                        record["bia_name"] = bia_name_override
+                else:
+                    sheet_records = _inject_bia_hint(sheet_records, base_name)
 
                 if is_threshold_sheet:
                     thresholds_result = (
