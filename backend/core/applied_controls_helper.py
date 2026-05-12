@@ -32,7 +32,7 @@ from doc_management.models import ManagedDocument
 from ebios_rm.models import Stakeholder
 from iam.models import Folder, RoleAssignment
 from integrations.models import SyncMapping
-from pmbok.models import GenericCollection
+from pmbok.models import GenericCollection, ResponsibilityActivity
 from privacy.models import DataBreach, Processing
 from resilience.models import AssetAssessment
 from webhooks.service import dispatch_webhook_event
@@ -67,6 +67,7 @@ def _reverse_m2m_through_tables() -> list[tuple[Any, str]]:
             "QuantitativeRiskHypothesis_removed",
         ),
         (AssetAssessment.associated_controls.through, "AssetAssessment"),
+        (ResponsibilityActivity.applied_controls.through, "ResponsibilityActivity"),
         # Through Policy (a proxy of AppliedControl — same table).
         (ValidationFlow.policies.through, "ValidationFlow_policies"),
         (GenericCollection.policies.through, "GenericCollection_policies"),
