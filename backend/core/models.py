@@ -829,7 +829,7 @@ class LibraryUpdater:
 
     def update_reference_controls(self):
         old_reference_controls_urn_set = set(
-            self.old_library.reference_controls.all().values_list("urn", flat=True)
+            self.old_library.reference_controls.values_list("urn", flat=True)
         )
         new_reference_controls_urn_set = set()
 
