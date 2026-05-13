@@ -327,7 +327,9 @@ def _resolve_vulnerabilities(
                 ).first()
             )
             if vuln is None:
-                vuln = Vulnerability.objects.create(name=token, folder=folder)
+                vuln = Vulnerability.objects.create(
+                    name=token, folder=folder, ref_id=token
+                )
             vuln_ids.append(vuln.id)
         except Exception:
             logging.exception(f"Failed to resolve vulnerability {token}")

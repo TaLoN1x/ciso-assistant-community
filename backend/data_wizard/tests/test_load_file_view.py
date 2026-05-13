@@ -768,9 +768,9 @@ class TestIncidentEndpoint:
             domain_folder.id,
         )
         body = resp.json()["results"]
-        # Warning path: record is still created, but a warning is recorded.
         assert body["created"] == 1
         assert Asset.objects.filter(ref_id="AST-FC-WARN-01").exists()
+        assert "warnings" in body
 
 
 @pytest.mark.django_db
