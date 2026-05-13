@@ -67,6 +67,11 @@ from .ebios_rm_excel_helpers import (
     extract_elementary_actions,
     process_excel_file as process_ebios_rm_excel,
 )
+from .egerie_xml_helpers import (
+    process_xml_file as process_egerie_xml,
+    quartile_to_index,
+    map_egerie_status,
+)
 from core.models import Terminology
 from data_wizard.arm_helpers import process_arm_file
 from tprm.models import Entity, Solution, Contract
@@ -326,6 +331,7 @@ def _resolve_vulnerabilities(value, folder) -> tuple[list[UUID], list[str]]:
 class RecordFileType(enum.StrEnum):
     XLSX = "Excel"
     CSV = "CSV"
+    XML = "XML"
 
     def get_error(self) -> str:
         match self:
@@ -333,6 +339,8 @@ class RecordFileType(enum.StrEnum):
                 return "ExcelParsingFailed"
             case RecordFileType.CSV:
                 return "CSVParsingFailed"
+            case RecordFileType.XML:
+                return "XMLParsingFailed"
             case _:
                 raise NotImplementedError(
                     f"Unreachable code detected (unknown {type(self).__name__} enum variant)."
@@ -349,6 +357,7 @@ class ModelType(enum.StrEnum):
     TPRM = "TPRM"
     EBIOS_RM_STUDY_ARM = "EbiosRMStudyARM"
     EBIOS_RM_STUDY_EXCEL = "EbiosRMStudyExcel"
+    EBIOS_RM_STUDY_EGERIE_XML = "EbiosRMStudyEgerieXML"
     ASSET = "Asset"
     APPLIED_CONTROL = "AppliedControl"
     PERIMETER = "Perimeter"
@@ -2540,6 +2549,12 @@ class LoadFileView(APIView):
                     res = self._process_ebios_rm_study_excel(
                         request, record_file, folder_id, matrix_id, on_conflict
                     )
+                # Special handling for Egerie Suite XML export
+                case ModelType.EBIOS_RM_STUDY_EGERIE_XML:
+                    file_type = RecordFileType.XML
+                    res = self._process_ebios_rm_study_egerie_xml(
+                        request, record_file, folder_id, matrix_id, on_conflict
+                    )
                 # Special handling for BIA multi-sheet import (assessments + thresholds)
                 case ModelType.BUSINESS_IMPACT_ANALYSIS:
                     res = self._process_bia_excel(
@@ -3825,7 +3840,7 @@ class LoadFileView(APIView):
 
         # Check if the file is an Excel file
         file_extension = file_obj.name.split(".")[-1].lower()
-        if file_extension not in ["xlsx", "xls", "csv"]:
+        if file_extension not in ["xlsx", "xls", "csv", "xml"]:
             logger.error(f"Unsupported file format: {repr(file_extension)}")
             return Response(
                 {"error": "unsupportedFileFormat"}, status=status.HTTP_400_BAD_REQUEST
@@ -6284,6 +6299,499 @@ class LoadFileView(APIView):
             logger.error(
                 f"Error processing EBIOS RM Study Excel: {str(e)}", exc_info=True
             )
+            results["failed"] = 1
+            results["errors"].append({"error": str(e)})
+
+        return results
+
+    def _process_ebios_rm_study_egerie_xml(
+        self,
+        request,
+        xml_file: io.BytesIO,
+        folder_id,
+        matrix_id,
+        on_conflict=ConflictMode.STOP,
+    ):
+        """Import an EBIOS RM study from an Egerie Suite XML export.
+
+        Cross-references in the XML use Egerie internal IDs (PA_, SA_, FE_, RS_, etc.).
+        We build id→model maps as we go and resolve floats to matrix indices using
+        the chosen risk matrix's size (quartile mapping).
+        """
+        from ebios_rm.models import OperationalScenario
+
+        results = {
+            "successful": 0,
+            "failed": 0,
+            "errors": [],
+            "warnings": [],
+            "details": {
+                "study": None,
+                "primary_assets_created": 0,
+                "primary_assets_skipped": 0,
+                "supporting_assets_created": 0,
+                "supporting_assets_skipped": 0,
+                "feared_events_created": 0,
+                "feared_events_skipped": 0,
+                "ro_to_couples_created": 0,
+                "ro_to_couples_skipped": 0,
+                "stakeholders_created": 0,
+                "stakeholders_skipped": 0,
+                "strategic_scenarios_created": 0,
+                "strategic_scenarios_skipped": 0,
+                "attack_paths_created": 0,
+                "attack_paths_skipped": 0,
+                "operational_scenarios_created": 0,
+                "operational_scenarios_skipped": 0,
+                "elementary_actions_created": 0,
+                "elementary_actions_skipped": 0,
+                "applied_controls_created": 0,
+                "applied_controls_skipped": 0,
+            },
+        }
+
+        def _warn(
+            entity_type: str, name: str, reason: str, egerie_id: str = ""
+        ) -> None:
+            results["warnings"].append(
+                {
+                    "entity_type": entity_type,
+                    "name": name,
+                    "reason": reason,
+                    "egerie_id": egerie_id,
+                }
+            )
+
+        try:
+            folder = Folder.objects.get(id=folder_id)
+            risk_matrix = RiskMatrix.objects.get(id=matrix_id) if matrix_id else None
+
+            # Matrix size drives quartile mapping (Egerie's 0..1 floats -> 0..n-1 index)
+            matrix_size = 4
+            if risk_matrix is not None:
+                try:
+                    matrix_def = risk_matrix.json_definition
+                    matrix_size = len(matrix_def.get("impact", [])) or 4
+                except Exception:
+                    pass
+
+            data = process_egerie_xml(xml_file.read())
+            study_data = data.get("study", {})
+
+            override_name = (request.headers.get("X-Name") or "").strip()
+            study_payload = {
+                "name": override_name
+                or study_data.get("name")
+                or "Imported Egerie Study",
+                "description": study_data.get("description", ""),
+                "ref_id": study_data.get("ref_id", "")[:100],
+                "version": (study_data.get("version", "") or "")[:100],
+                "folder": str(folder.id),
+            }
+            if risk_matrix:
+                study_payload["risk_matrix"] = str(risk_matrix.id)
+
+            serializer = EbiosRMStudyWriteSerializer(
+                data=study_payload, context={"request": request}
+            )
+            if not serializer.is_valid():
+                results["failed"] = 1
+                results["errors"].append(
+                    {"error": "Failed to create study", "details": serializer.errors}
+                )
+                return results
+
+            study = serializer.save()
+            results["details"]["study"] = str(study.id)
+
+            # --- Assets: primary + supporting ---
+            # Egerie IDs (PA_/SA_) -> CISO Asset instance
+            asset_by_egerie_id: dict[str, Asset] = {}
+            for kind, key_created, key_skipped in [
+                ("primary_assets", "primary_assets_created", "primary_assets_skipped"),
+                (
+                    "supporting_assets",
+                    "supporting_assets_created",
+                    "supporting_assets_skipped",
+                ),
+            ]:
+                for a in data.get(kind, []):
+                    name = a["name"] or a["id"]
+                    existing = Asset.objects.filter(
+                        name__iexact=name, folder=folder
+                    ).first()
+                    if existing:
+                        asset_by_egerie_id[a["id"]] = existing
+                        results["details"][key_skipped] += 1
+                        _warn(
+                            kind.rstrip("s"),
+                            name,
+                            "an asset with this name already exists in the target folder (or is a duplicate inside the XML)",
+                            a["id"],
+                        )
+                        if on_conflict == ConflictMode.UPDATE:
+                            if a.get("description"):
+                                existing.description = a["description"]
+                            existing.type = a["type"]
+                            existing.save()
+                        continue
+                    asset = Asset.objects.create(
+                        name=name,
+                        description=a.get("description", ""),
+                        type=a["type"],
+                        folder=folder,
+                    )
+                    asset_by_egerie_id[a["id"]] = asset
+                    results["details"][key_created] += 1
+
+            study.assets.set(asset_by_egerie_id.values())
+
+            # --- Feared events ---
+            fe_by_egerie_id: dict[str, FearedEvent] = {}
+            for fe in data.get("feared_events", []):
+                name = fe["name"] or fe["id"]
+                gravity = quartile_to_index(fe.get("severity"), matrix_size)
+                if gravity is None:
+                    gravity = -1
+                existing = FearedEvent.objects.filter(
+                    ebios_rm_study=study, name__iexact=name
+                ).first()
+                if existing:
+                    fe_by_egerie_id[fe["id"]] = existing
+                    results["details"]["feared_events_skipped"] += 1
+                    _warn(
+                        "feared_event",
+                        name,
+                        "a feared event with this name already exists in the study",
+                        fe["id"],
+                    )
+                    continue
+                obj = FearedEvent.objects.create(
+                    ebios_rm_study=study,
+                    name=name,
+                    description=fe.get("description", ""),
+                    gravity=gravity,
+                    is_selected=True,
+                    folder=folder,
+                )
+                pa_id = fe.get("primary_asset_id")
+                if pa_id and pa_id in asset_by_egerie_id:
+                    obj.assets.add(asset_by_egerie_id[pa_id])
+                fe_by_egerie_id[fe["id"]] = obj
+                results["details"]["feared_events_created"] += 1
+
+            # --- RO/TO couples: derived from strategic scenarios' (riskSource, objective) pairs ---
+            risk_sources_by_id = {rs["id"]: rs for rs in data.get("risk_sources", [])}
+            objectives_by_id = {ob["id"]: ob for ob in data.get("objectives", [])}
+
+            def _get_or_create_risk_origin(name: str) -> Optional["Terminology"]:
+                if not name:
+                    return None
+                t = Terminology.objects.filter(
+                    field_path=Terminology.FieldPath.ROTO_RISK_ORIGIN,
+                    name__iexact=name,
+                ).first()
+                if t:
+                    return t
+                return Terminology.objects.create(
+                    name=name,
+                    field_path=Terminology.FieldPath.ROTO_RISK_ORIGIN,
+                    folder=Folder.get_root_folder(),
+                    is_visible=True,
+                )
+
+            # Keyed by (risk_source_egerie_id, objective_egerie_id) so we reuse the same RoTo
+            # when multiple Egerie strategic scenarios share the same pair (rare but possible).
+            roto_by_pair: dict[tuple[str, str], RoTo] = {}
+
+            def _get_or_create_roto(rs_id: str, ob_id: str) -> Optional[RoTo]:
+                if not rs_id or not ob_id:
+                    return None
+                key = (rs_id, ob_id)
+                if key in roto_by_pair:
+                    return roto_by_pair[key]
+                rs = risk_sources_by_id.get(rs_id, {})
+                ob = objectives_by_id.get(ob_id, {})
+                risk_origin = _get_or_create_risk_origin(rs.get("name", ""))
+                target_objective = ob.get("name", "") or "(unspecified)"
+                existing = (
+                    RoTo.objects.filter(
+                        ebios_rm_study=study,
+                        risk_origin=risk_origin,
+                        target_objective__iexact=target_objective,
+                    ).first()
+                    if risk_origin
+                    else None
+                )
+                if existing:
+                    roto_by_pair[key] = existing
+                    results["details"]["ro_to_couples_skipped"] += 1
+                    _warn(
+                        "ro_to_couple",
+                        f"{rs.get('name', '')} / {target_objective}",
+                        "an RO/TO couple with this risk origin and target objective already exists in the study",
+                    )
+                    return existing
+                roto = RoTo.objects.create(
+                    ebios_rm_study=study,
+                    risk_origin=risk_origin,
+                    target_objective=target_objective,
+                    is_selected=True,
+                    folder=folder,
+                )
+                roto_by_pair[key] = roto
+                results["details"]["ro_to_couples_created"] += 1
+                return roto
+
+            # --- Stakeholders ---
+            sh_by_egerie_id: dict[str, Stakeholder] = {}
+            default_category = Terminology.objects.filter(
+                field_path=Terminology.FieldPath.ENTITY_RELATIONSHIP,
+                is_visible=True,
+            ).first()
+            if default_category is None:
+                default_category = Terminology.objects.create(
+                    name="third_party",
+                    field_path=Terminology.FieldPath.ENTITY_RELATIONSHIP,
+                    folder=Folder.get_root_folder(),
+                    is_visible=True,
+                )
+
+            for sh in data.get("stakeholders", []):
+                name = sh["name"] or sh["id"]
+                entity, _ = Entity.objects.get_or_create(name=name, folder=folder)
+                existing = Stakeholder.objects.filter(
+                    ebios_rm_study=study, entity=entity
+                ).first()
+                if existing:
+                    sh_by_egerie_id[sh["id"]] = existing
+                    results["details"]["stakeholders_skipped"] += 1
+                    _warn(
+                        "stakeholder",
+                        name,
+                        "a stakeholder for this entity already exists in the study",
+                        sh["id"],
+                    )
+                    continue
+                stakeholder = Stakeholder.objects.create(
+                    ebios_rm_study=study,
+                    entity=entity,
+                    category=default_category,
+                    current_dependency=quartile_to_index(
+                        sh.get("dependence"), matrix_size
+                    )
+                    or 0,
+                    current_penetration=quartile_to_index(
+                        sh.get("penetration"), matrix_size
+                    )
+                    or 0,
+                    current_maturity=quartile_to_index(sh.get("maturity"), matrix_size)
+                    or 0,
+                    current_trust=quartile_to_index(sh.get("trust"), matrix_size) or 0,
+                    is_selected=True,
+                    folder=folder,
+                )
+                sh_by_egerie_id[sh["id"]] = stakeholder
+                results["details"]["stakeholders_created"] += 1
+
+            # --- Strategic scenarios + attack paths (nested) ---
+            ss_by_egerie_id: dict[str, StrategicScenario] = {}
+            ap_by_egerie_id: dict[str, AttackPath] = {}
+            for ss in data.get("strategic_scenarios", []):
+                roto = _get_or_create_roto(ss["risk_source_id"], ss["objective_id"])
+                if roto is None:
+                    # Can't create a CISO StrategicScenario without a RoTo (FK is required)
+                    continue
+                # Link Egerie FEs into the RoTo's M2M
+                for fe_id in ss.get("feared_event_ids", []):
+                    if fe_id in fe_by_egerie_id:
+                        roto.feared_events.add(fe_by_egerie_id[fe_id])
+
+                ss_name = ss["name"] or ss["id"]
+                existing_ss = StrategicScenario.objects.filter(
+                    ebios_rm_study=study, name__iexact=ss_name
+                ).first()
+                if existing_ss:
+                    ss_by_egerie_id[ss["id"]] = existing_ss
+                    results["details"]["strategic_scenarios_skipped"] += 1
+                    _warn(
+                        "strategic_scenario",
+                        ss_name,
+                        "a strategic scenario with this name already exists in the study",
+                        ss["id"],
+                    )
+                else:
+                    existing_ss = StrategicScenario.objects.create(
+                        ebios_rm_study=study,
+                        name=ss_name,
+                        ro_to_couple=roto,
+                        folder=folder,
+                    )
+                    ss_by_egerie_id[ss["id"]] = existing_ss
+                    results["details"]["strategic_scenarios_created"] += 1
+
+                # Attack paths inside this strategic scenario
+                for ap in ss.get("attack_paths", []):
+                    ap_name = f"{ss_name} - AP {len(ap_by_egerie_id) + 1:02d}"
+                    existing_ap = AttackPath.objects.filter(
+                        ebios_rm_study=study,
+                        strategic_scenario=existing_ss,
+                        name__iexact=ap_name,
+                    ).first()
+                    if existing_ap:
+                        ap_by_egerie_id[ap["id"]] = existing_ap
+                        results["details"]["attack_paths_skipped"] += 1
+                        _warn(
+                            "attack_path",
+                            ap_name,
+                            "an attack path with this name already exists under this strategic scenario",
+                            ap["id"],
+                        )
+                        continue
+                    new_ap = AttackPath.objects.create(
+                        ebios_rm_study=study,
+                        strategic_scenario=existing_ss,
+                        name=ap_name,
+                        is_selected=True,
+                        folder=folder,
+                    )
+                    ap_by_egerie_id[ap["id"]] = new_ap
+                    results["details"]["attack_paths_created"] += 1
+
+            # --- Elementary actions ---
+            ea_by_egerie_id: dict[str, ElementaryAction] = {}
+            for ea in data.get("elementary_actions", []):
+                name = ea["name"] or ea["id"]
+                existing = ElementaryAction.objects.filter(
+                    name__iexact=name, folder=folder
+                ).first()
+                if existing:
+                    ea_by_egerie_id[ea["id"]] = existing
+                    results["details"]["elementary_actions_skipped"] += 1
+                    _warn(
+                        "elementary_action",
+                        name,
+                        "an elementary action with this name already exists in the target folder",
+                        ea["id"],
+                    )
+                    continue
+                obj = ElementaryAction.objects.create(
+                    name=name,
+                    description=ea.get("description", ""),
+                    folder=folder,
+                )
+                ea_by_egerie_id[ea["id"]] = obj
+                results["details"]["elementary_actions_created"] += 1
+
+            # --- Operational scenarios ---
+            # Each Egerie OS may link multiple Egerie attackPaths; CISO OS is OneToOne
+            # with one AttackPath. Take the first AP; record any extra in a description note.
+            for os_data in data.get("operational_scenarios", []):
+                ap_ids = os_data.get("attack_path_ids", [])
+                first_ap = next(
+                    (
+                        ap_by_egerie_id[ap_id]
+                        for ap_id in ap_ids
+                        if ap_id in ap_by_egerie_id
+                    ),
+                    None,
+                )
+                if first_ap is None:
+                    results["details"]["operational_scenarios_skipped"] += 1
+                    _warn(
+                        "operational_scenario",
+                        os_data.get("name", "") or os_data.get("id", ""),
+                        "the Egerie operational scenario does not link to any importable attack path; CISO Assistant requires one",
+                        os_data.get("id", ""),
+                    )
+                    continue
+
+                likelihood = quartile_to_index(os_data.get("likelihood"), matrix_size)
+                if likelihood is None:
+                    likelihood = -1
+
+                existing = OperationalScenario.objects.filter(
+                    ebios_rm_study=study, attack_path=first_ap
+                ).first()
+                if existing:
+                    results["details"]["operational_scenarios_skipped"] += 1
+                    _warn(
+                        "operational_scenario",
+                        os_data.get("name", "") or os_data.get("id", ""),
+                        f"attack path '{first_ap.name}' is already linked to another operational scenario (CISO Assistant enforces one OS per attack path)",
+                        os_data.get("id", ""),
+                    )
+                    continue
+
+                desc_lines = [os_data.get("name", "")]
+                if len(ap_ids) > 1:
+                    desc_lines.append(
+                        f"(Egerie scenario also spans {len(ap_ids) - 1} other attack path(s); only the first is linked here.)"
+                    )
+
+                OperationalScenario.objects.create(
+                    ebios_rm_study=study,
+                    attack_path=first_ap,
+                    likelihood=likelihood,
+                    operating_modes_description="\n".join(filter(None, desc_lines)),
+                    is_selected=True,
+                    folder=folder,
+                )
+                results["details"]["operational_scenarios_created"] += 1
+
+            # --- Applied controls (not linked to scenarios in v1) ---
+            for ctl in data.get("controls", []):
+                name = ctl["name"] or ctl["id"]
+                if not name:
+                    continue
+                existing = AppliedControl.objects.filter(
+                    name__iexact=name, folder=folder
+                ).first()
+                if existing:
+                    results["details"]["applied_controls_skipped"] += 1
+                    _warn(
+                        "applied_control",
+                        name,
+                        "an applied control with this name already exists in the target folder",
+                        ctl["id"],
+                    )
+                    continue
+                payload = {
+                    "name": name,
+                    "description": ctl.get("description", ""),
+                    "folder": str(folder.id),
+                }
+                status_val = map_egerie_status(ctl.get("egerie_status", ""))
+                if status_val:
+                    payload["status"] = status_val
+                ac_serializer = AppliedControlWriteSerializer(
+                    data=payload, context={"request": request}
+                )
+                if ac_serializer.is_valid():
+                    ac_serializer.save()
+                    results["details"]["applied_controls_created"] += 1
+                else:
+                    results["errors"].append(
+                        {
+                            "applied_control": name,
+                            "errors": ac_serializer.errors,
+                        }
+                    )
+
+            results["successful"] = 1
+
+        except Folder.DoesNotExist:
+            results["failed"] = 1
+            results["errors"].append(
+                {"error": f"Folder with ID {folder_id} does not exist"}
+            )
+        except RiskMatrix.DoesNotExist:
+            results["failed"] = 1
+            results["errors"].append(
+                {"error": f"Risk matrix with ID {matrix_id} does not exist"}
+            )
+        except Exception as e:
+            logger.error(f"Error processing Egerie XML: {str(e)}", exc_info=True)
             results["failed"] = 1
             results["errors"].append({"error": str(e)})
 
