@@ -13229,6 +13229,29 @@ class ComplianceAssessmentViewSet(BaseModelViewSet):
                     )
                 selected_reference_control_ids = raw
         requirement_assessments = compliance_assessment.requirement_assessments.all()
+        if dry_run:
+            status_priority = {"create": 0, "reuse": 1, "linked": 2}
+            best: dict[str, dict] = {}
+            for ra in requirement_assessments:
+                for entry in ra.preview_suggested_applied_controls(
+                    selected_reference_control_ids=selected_reference_control_ids,
+                ):
+                    ref_ctrl = entry["applied_control"].reference_control
+                    key = str(ref_ctrl.id) if ref_ctrl else None
+                    if key is None:
+                        continue
+                    current = best.get(key)
+                    if current is None or status_priority[entry["status"]] < status_priority[
+                        current["status"]
+                    ]:
+                        best[key] = entry
+            preview = list(best.values())
+            serialized = AppliedControlReadSerializer(
+                [entry["applied_control"] for entry in preview], many=True
+            ).data
+            for item, entry in zip(serialized, preview):
+                item["suggestion_status"] = entry["status"]
+            return Response(serialized, status=status.HTTP_200_OK)
         controls = []
         for requirement_assessment in requirement_assessments:
             controls.append(
@@ -14116,6 +14139,16 @@ class RequirementAssessmentViewSet(BaseModelViewSet):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
                 selected_reference_control_ids = raw
+        if dry_run:
+            preview = requirement_assessment.preview_suggested_applied_controls(
+                selected_reference_control_ids=selected_reference_control_ids,
+            )
+            serialized = AppliedControlReadSerializer(
+                [entry["applied_control"] for entry in preview], many=True
+            ).data
+            for item, entry in zip(serialized, preview):
+                item["suggestion_status"] = entry["status"]
+            return Response(serialized, status=status.HTTP_200_OK)
         controls = requirement_assessment.create_applied_controls_from_suggestions(
             dry_run=dry_run,
             selected_reference_control_ids=selected_reference_control_ids,

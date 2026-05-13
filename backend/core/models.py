@@ -8132,6 +8132,60 @@ class RequirementAssessment(AbstractBaseModel, FolderMixin, ETADueDateMixin):
                 return {"result": RequirementAssessment.Result.NON_COMPLIANT}
         return {}
 
+    def preview_suggested_applied_controls(
+        self,
+        *,
+        selected_reference_control_ids: list | None = None,
+    ) -> list[dict]:
+        """Return a list of {'applied_control': AppliedControl, 'status': str}
+        where status is one of 'create' (no matching AppliedControl exists yet),
+        'reuse' (an AppliedControl with same folder/ref/category exists and will
+        be linked), or 'linked' (already linked to this RequirementAssessment).
+        AppliedControl instances may be unsaved when status == 'create'."""
+        results: list[dict] = []
+        if not self.compliance_assessment.requirement_matches_selected_groups(
+            self.requirement
+        ):
+            return results
+        reference_controls = self.requirement.reference_controls.all()
+        if selected_reference_control_ids is not None:
+            reference_controls = reference_controls.filter(
+                id__in=selected_reference_control_ids
+            )
+        for reference_control in reference_controls:
+            linked = AppliedControl.objects.filter(
+                folder=self.folder,
+                reference_control=reference_control,
+                category=reference_control.category,
+                requirement_assessments=self,
+            ).first()
+            if linked:
+                results.append({"applied_control": linked, "status": "linked"})
+                continue
+            existing = AppliedControl.objects.filter(
+                folder=self.folder,
+                reference_control=reference_control,
+                category=reference_control.category,
+            ).first()
+            if existing:
+                results.append({"applied_control": existing, "status": "reuse"})
+                continue
+            results.append(
+                {
+                    "applied_control": AppliedControl(
+                        folder=self.folder,
+                        reference_control=reference_control,
+                        category=reference_control.category,
+                        name=reference_control.get_name_translated
+                        or reference_control.ref_id,
+                        ref_id=reference_control.ref_id,
+                        description=reference_control.description,
+                    ),
+                    "status": "create",
+                }
+            )
+        return results
+
     def create_applied_controls_from_suggestions(
         self,
         *,
