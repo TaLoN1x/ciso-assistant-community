@@ -15,6 +15,11 @@ import xml.etree.ElementTree as ET
 from io import BytesIO
 from typing import Optional
 
+# defusedxml hardens the stdlib parser against XXE, billion-laughs, etc. We
+# only need its safe `parse`; the resulting tree is a regular stdlib ElementTree,
+# so all the iteration/typing below still uses xml.etree.ElementTree.
+from defusedxml.ElementTree import parse as safe_xml_parse
+
 EGERIE_NS = "http://www.egerie-software.com/riskmanager"
 
 
@@ -374,8 +379,10 @@ def process_xml_file(file_content: bytes) -> dict:
     Egerie-specific fields (id, raw float scores) so the importer can resolve
     cross-references and apply matrix-aware quartile mapping.
     """
-    tree = ET.parse(BytesIO(file_content))
+    tree = safe_xml_parse(BytesIO(file_content))
     root = tree.getroot()
+    if root is None:
+        raise ValueError("Egerie XML document is empty or malformed")
     _strip_namespace(root)
 
     return {

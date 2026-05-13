@@ -6372,8 +6372,12 @@ class LoadFileView(APIView):
                 try:
                     matrix_def = risk_matrix.json_definition
                     matrix_size = len(matrix_def.get("impact", [])) or 4
-                except Exception:
-                    pass
+                except (AttributeError, TypeError) as e:
+                    logger.warning(
+                        "Falling back to matrix_size=4 — could not read 'impact' "
+                        "from risk_matrix.json_definition: %s",
+                        e,
+                    )
 
             data = process_egerie_xml(xml_file.read())
             study_data = data.get("study", {})
