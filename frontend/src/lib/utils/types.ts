@@ -139,7 +139,7 @@ export const URL_MODEL = [
 	'accreditations',
 	'responsibility-roles',
 	'responsibility-matrices',
-	'responsibility-activities',
+	'responsibility-matrix-activities',
 	'responsibility-matrix-actors',
 	'responsibility-assignments',
 	// metrology

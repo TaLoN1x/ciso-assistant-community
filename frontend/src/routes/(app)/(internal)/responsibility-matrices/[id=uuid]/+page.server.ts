@@ -36,7 +36,7 @@ export const load: PageServerLoad = async (event) => {
 	// without a separate pool.
 	const [activitiesRes, actorsRes, assignmentsRes, allActorsRes] = await Promise.all([
 		event.fetch(
-			`${BASE_API_URL}/pmbok/responsibility-activities/?matrix=${matrixId}&ordering=order`
+			`${BASE_API_URL}/pmbok/responsibility-matrix-activities/?matrix=${matrixId}&ordering=order`
 		),
 		event.fetch(
 			`${BASE_API_URL}/pmbok/responsibility-matrix-actors/?matrix=${matrixId}&ordering=order`

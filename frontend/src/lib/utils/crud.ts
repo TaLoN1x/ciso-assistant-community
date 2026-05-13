@@ -2712,13 +2712,13 @@ export const URL_MODEL_MAP: ModelMap = {
 			{ field: 'filtering_labels' }
 		]
 	},
-	'responsibility-activities': {
-		name: 'responsibilityactivity',
+	'responsibility-matrix-activities': {
+		name: 'responsibilitymatrixactivity',
 		localName: 'responsibilityActivity',
 		localNamePlural: 'responsibilityActivities',
 		verboseName: 'Responsibility activity',
 		verboseNamePlural: 'Responsibility activities',
-		endpointUrl: 'pmbok/responsibility-activities',
+		endpointUrl: 'pmbok/responsibility-matrix-activities',
 		detailViewFields: [
 			{ field: 'id' },
 			{ field: 'matrix', urlModel: 'responsibility-matrices' },
@@ -2757,12 +2757,12 @@ export const URL_MODEL_MAP: ModelMap = {
 		endpointUrl: 'pmbok/responsibility-assignments',
 		detailViewFields: [
 			{ field: 'id' },
-			{ field: 'activity', urlModel: 'responsibility-activities' },
+			{ field: 'activity', urlModel: 'responsibility-matrix-activities' },
 			{ field: 'actor', urlModel: 'actors' },
 			{ field: 'role', urlModel: 'responsibility-roles' }
 		],
 		foreignKeyFields: [
-			{ field: 'activity', urlModel: 'responsibility-activities' },
+			{ field: 'activity', urlModel: 'responsibility-matrix-activities' },
 			{ field: 'actor', urlModel: 'actors' },
 			{ field: 'role', urlModel: 'responsibility-roles' }
 		],

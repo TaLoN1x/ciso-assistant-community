@@ -7,7 +7,7 @@ from pmbok.models import (
     Accreditation,
     ResponsibilityRole,
     ResponsibilityMatrix,
-    ResponsibilityActivity,
+    ResponsibilityMatrixActivity,
     ResponsibilityMatrixActor,
     ResponsibilityAssignment,
 )
@@ -164,7 +164,7 @@ class ResponsibilityMatrixWriteSerializer(BaseModelSerializer):
         return instance
 
 
-class ResponsibilityActivityReadSerializer(BaseModelSerializer):
+class ResponsibilityMatrixActivityReadSerializer(BaseModelSerializer):
     matrix = FieldsRelatedField()
     assets = FieldsRelatedField(many=True)
     applied_controls = FieldsRelatedField(many=True)
@@ -179,13 +179,13 @@ class ResponsibilityActivityReadSerializer(BaseModelSerializer):
         return obj.assignments.count()
 
     class Meta:
-        model = ResponsibilityActivity
+        model = ResponsibilityMatrixActivity
         fields = "__all__"
 
 
-class ResponsibilityActivityWriteSerializer(BaseModelSerializer):
+class ResponsibilityMatrixActivityWriteSerializer(BaseModelSerializer):
     class Meta:
-        model = ResponsibilityActivity
+        model = ResponsibilityMatrixActivity
         fields = "__all__"
 
 

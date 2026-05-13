@@ -1601,7 +1601,7 @@ export const ResponsibilityMatrixSchema = z.object({
 	filtering_labels: z.array(z.string().uuid().optional()).optional()
 });
 
-export const ResponsibilityActivitySchema = z.object({
+export const ResponsibilityMatrixActivitySchema = z.object({
 	name: z.string().min(1).max(500),
 	description: z.string().optional(),
 	order: z.coerce.number().int().min(0).default(0),
@@ -1794,7 +1794,7 @@ const SCHEMA_MAP: Record<string, ZodSchema> = {
 	accreditations: AccreditationSchema,
 	'responsibility-roles': ResponsibilityRoleSchema,
 	'responsibility-matrices': ResponsibilityMatrixSchema,
-	'responsibility-activities': ResponsibilityActivitySchema,
+	'responsibility-matrix-activities': ResponsibilityMatrixActivitySchema,
 	'responsibility-matrix-actors': ResponsibilityMatrixActorSchema,
 	'responsibility-assignments': ResponsibilityAssignmentSchema,
 	'metric-definitions': MetricDefinitionSchema,

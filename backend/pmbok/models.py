@@ -378,7 +378,7 @@ class ResponsibilityMatrix(NameDescriptionFolderMixin, FilteringLabelMixin):
             )
 
 
-class ResponsibilityActivity(AbstractBaseModel, FolderMixin):
+class ResponsibilityMatrixActivity(AbstractBaseModel, FolderMixin):
     """A row in a responsibility matrix: the thing being done."""
 
     matrix = models.ForeignKey(
@@ -480,7 +480,7 @@ class ResponsibilityAssignment(AbstractBaseModel, FolderMixin):
     """A single cell: (activity, actor) -> role. One role per cell."""
 
     activity = models.ForeignKey(
-        ResponsibilityActivity,
+        ResponsibilityMatrixActivity,
         on_delete=models.CASCADE,
         related_name="assignments",
     )
@@ -529,7 +529,7 @@ auditlog.register(
     exclude_fields=common_exclude,
 )
 auditlog.register(
-    ResponsibilityActivity,
+    ResponsibilityMatrixActivity,
     exclude_fields=common_exclude,
 )
 auditlog.register(

@@ -30,7 +30,7 @@
 {#if !activityHidden}
 	<AutocompleteSelect
 		{form}
-		optionsEndpoint="pmbok/responsibility-activities"
+		optionsEndpoint="pmbok/responsibility-matrix-activities"
 		optionsLabelField="auto"
 		field="activity"
 		cacheLock={cacheLocks['activity']}

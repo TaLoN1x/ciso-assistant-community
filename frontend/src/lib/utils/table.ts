@@ -2729,7 +2729,7 @@ export const listViewFields = {
 		body: ['code', 'name', 'taxonomy', 'color', 'order', 'builtin'],
 		filters: {}
 	},
-	'responsibility-activities': {
+	'responsibility-matrix-activities': {
 		head: ['name', 'description', 'order', 'matrix'],
 		body: ['name', 'description', 'order', 'matrix'],
 		filters: {}

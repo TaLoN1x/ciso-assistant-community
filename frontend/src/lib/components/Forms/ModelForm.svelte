@@ -76,7 +76,7 @@
 	import GenericCollectionForm from './ModelForm/GenericCollectionForm.svelte';
 	import AccreditationForm from './ModelForm/AccreditationForm.svelte';
 	import ResponsibilityMatrixForm from './ModelForm/ResponsibilityMatrixForm.svelte';
-	import ResponsibilityActivityForm from './ModelForm/ResponsibilityActivityForm.svelte';
+	import ResponsibilityMatrixActivityForm from './ModelForm/ResponsibilityMatrixActivityForm.svelte';
 	import ResponsibilityAssignmentForm from './ModelForm/ResponsibilityAssignmentForm.svelte';
 	import ResponsibilityRoleForm from './ModelForm/ResponsibilityRoleForm.svelte';
 	import MetricDefinitionForm from './ModelForm/MetricDefinitionForm.svelte';
@@ -818,8 +818,8 @@
 				{object}
 				{context}
 			/>
-		{:else if URLModel === 'responsibility-activities'}
-			<ResponsibilityActivityForm
+		{:else if URLModel === 'responsibility-matrix-activities'}
+			<ResponsibilityMatrixActivityForm
 				{form}
 				{model}
 				{cacheLocks}

@@ -4,7 +4,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from core.models import Actor
 from iam.models import Folder, User
 from pmbok.models import (
-    ResponsibilityActivity,
+    ResponsibilityMatrixActivity,
     ResponsibilityAssignment,
     ResponsibilityMatrix,
     ResponsibilityMatrixActor,
@@ -47,7 +47,7 @@ def matrix(seeded_roles):
 
 @pytest.fixture
 def activity(matrix):
-    return ResponsibilityActivity.objects.create(
+    return ResponsibilityMatrixActivity.objects.create(
         matrix=matrix, name="Draft policy", order=0
     )
 
@@ -153,7 +153,7 @@ class TestCycleCellValidation:
         other_matrix = ResponsibilityMatrix.objects.create(
             name="Other matrix", folder=Folder.get_root_folder()
         )
-        foreign_activity = ResponsibilityActivity.objects.create(
+        foreign_activity = ResponsibilityMatrixActivity.objects.create(
             matrix=other_matrix, name="Wrong matrix activity"
         )
         resp = _call_cycle(matrix, foreign_activity, actor_in_matrix, superuser)
@@ -216,7 +216,7 @@ class TestActorRemovalCascade:
             name="Other", folder=Folder.get_root_folder()
         )
         other_matrix.roles.set(matrix.roles.all())
-        other_activity = ResponsibilityActivity.objects.create(
+        other_activity = ResponsibilityMatrixActivity.objects.create(
             matrix=other_matrix, name="Other activity"
         )
         other_membership = ResponsibilityMatrixActor.objects.create(

@@ -43,7 +43,7 @@ export const POST: RequestHandler = async ({ fetch, params, request, url }) => {
 
 	switch (action) {
 		case 'create-activity':
-			return proxy(fetch, `${BASE_API_URL}/pmbok/responsibility-activities/`, 'POST', {
+			return proxy(fetch, `${BASE_API_URL}/pmbok/responsibility-matrix-activities/`, 'POST', {
 				matrix: matrixId,
 				name: body.name,
 				order: body.order ?? 0
@@ -69,7 +69,7 @@ export const POST: RequestHandler = async ({ fetch, params, request, url }) => {
 			}
 			return proxy(
 				fetch,
-				`${BASE_API_URL}/pmbok/responsibility-activities/${activityId}/`,
+				`${BASE_API_URL}/pmbok/responsibility-matrix-activities/${activityId}/`,
 				'PATCH',
 				patch
 			);
@@ -79,7 +79,7 @@ export const POST: RequestHandler = async ({ fetch, params, request, url }) => {
 			const activityId = requireUuid(body.id, 'id');
 			return proxy(
 				fetch,
-				`${BASE_API_URL}/pmbok/responsibility-activities/${activityId}/`,
+				`${BASE_API_URL}/pmbok/responsibility-matrix-activities/${activityId}/`,
 				'DELETE'
 			);
 		}

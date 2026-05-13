@@ -11,7 +11,7 @@ from pmbok.models import (
     Accreditation,
     ResponsibilityRole,
     ResponsibilityMatrix,
-    ResponsibilityActivity,
+    ResponsibilityMatrixActivity,
     ResponsibilityMatrixActor,
     ResponsibilityAssignment,
 )
@@ -136,7 +136,7 @@ class ResponsibilityMatrixViewSet(BaseModelViewSet):
 
         try:
             activity = matrix.activities.get(id=activity_id)
-        except ResponsibilityActivity.DoesNotExist:
+        except ResponsibilityMatrixActivity.DoesNotExist:
             return Response(
                 {"detail": "activity does not belong to this matrix"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -219,9 +219,9 @@ class ResponsibilityMatrixViewSet(BaseModelViewSet):
         ids = request.data.get("ids") or []
         with transaction.atomic():
             for idx, aid in enumerate(ids):
-                ResponsibilityActivity.objects.filter(id=aid, matrix=matrix).update(
-                    order=idx
-                )
+                ResponsibilityMatrixActivity.objects.filter(
+                    id=aid, matrix=matrix
+                ).update(order=idx)
         return Response({"updated": len(ids)})
 
     @action(detail=True, methods=["post"], url_path="reorder-actors")
@@ -254,10 +254,10 @@ class ResponsibilityMatrixActorViewSet(BaseModelViewSet):
             instance.delete()
 
 
-class ResponsibilityActivityViewSet(BaseModelViewSet):
+class ResponsibilityMatrixActivityViewSet(BaseModelViewSet):
     """API endpoint that allows responsibility activities (rows of a matrix) to be viewed or edited."""
 
-    model = ResponsibilityActivity
+    model = ResponsibilityMatrixActivity
     serializers_module = "pmbok.serializers"
     filterset_fields = ["matrix"]
     search_fields = ["name", "description"]
@@ -270,10 +270,10 @@ class ResponsibilityActivityViewSet(BaseModelViewSet):
         # fetches per page mount.
         response = super().update(request, *args, **kwargs)
         # super().update() already saved the instance; re-read for the Read shape.
-        from pmbok.serializers import ResponsibilityActivityReadSerializer
+        from pmbok.serializers import ResponsibilityMatrixActivityReadSerializer
 
         instance = self.get_object()
-        response.data = ResponsibilityActivityReadSerializer(instance).data
+        response.data = ResponsibilityMatrixActivityReadSerializer(instance).data
         return response
 
 

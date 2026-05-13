@@ -6,7 +6,7 @@ from .views import (
     AccreditationViewSet,
     ResponsibilityRoleViewSet,
     ResponsibilityMatrixViewSet,
-    ResponsibilityActivityViewSet,
+    ResponsibilityMatrixActivityViewSet,
     ResponsibilityMatrixActorViewSet,
     ResponsibilityAssignmentViewSet,
 )
@@ -33,9 +33,9 @@ router.register(
     basename="responsibility-matrices",
 )
 router.register(
-    "responsibility-activities",
-    ResponsibilityActivityViewSet,
-    basename="responsibility-activities",
+    "responsibility-matrix-activities",
+    ResponsibilityMatrixActivityViewSet,
+    basename="responsibility-matrix-activities",
 )
 router.register(
     "responsibility-matrix-actors",
