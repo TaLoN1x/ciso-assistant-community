@@ -652,11 +652,13 @@
 												<button
 													class="btn self-end shadow-sm
 														{nothingToSuggest
-															? 'bg-emerald-50 border border-emerald-200 text-emerald-700 cursor-not-allowed pointer-events-none'
-															: 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'}"
+														? 'bg-emerald-50 border border-emerald-200 text-emerald-700 cursor-not-allowed pointer-events-none'
+														: 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'}"
 													type="button"
 													disabled={nothingToSuggest || createAppliedControlsLoading}
-													aria-label={nothingToSuggest ? m.allSuggestionsApplied() : m.suggestControls()}
+													aria-label={nothingToSuggest
+														? m.allSuggestionsApplied()
+														: m.suggestControls()}
 													onclick={() => {
 														modalConfirmCreateSuggestedControls(
 															page.data.requirementAssessment.id,
