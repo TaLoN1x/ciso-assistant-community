@@ -8147,28 +8147,39 @@ class RequirementAssessment(AbstractBaseModel, FolderMixin, ETADueDateMixin):
             self.requirement
         ):
             return results
-        reference_controls = self.requirement.reference_controls.all()
+        reference_controls = list(self.requirement.reference_controls.all())
         if selected_reference_control_ids is not None:
-            reference_controls = reference_controls.filter(
-                id__in=selected_reference_control_ids
-            )
+            ids_set = set(selected_reference_control_ids)
+            reference_controls = [
+                rc for rc in reference_controls if str(rc.id) in ids_set
+            ]
+        if not reference_controls:
+            return results
+        # Single query covering every (folder, reference_control, category) combo
+        # we may need, plus the RAs each candidate is linked to. Avoids 2R queries.
+        ref_ids = [rc.id for rc in reference_controls]
+        ac_qs = AppliedControl.objects.filter(
+            folder=self.folder,
+            reference_control_id__in=ref_ids,
+        ).prefetch_related("requirement_assessments")
+        ac_by_key: dict = {}
+        linked_keys: set = set()
+        for ac in ac_qs:
+            key = (ac.reference_control_id, ac.category)
+            ac_by_key.setdefault(key, ac)
+            if any(ra.id == self.id for ra in ac.requirement_assessments.all()):
+                linked_keys.add(key)
         for reference_control in reference_controls:
-            linked = AppliedControl.objects.filter(
-                folder=self.folder,
-                reference_control=reference_control,
-                category=reference_control.category,
-                requirement_assessments=self,
-            ).first()
-            if linked:
-                results.append({"applied_control": linked, "status": "linked"})
+            key = (reference_control.id, reference_control.category)
+            if key in linked_keys:
+                results.append(
+                    {"applied_control": ac_by_key[key], "status": "linked"}
+                )
                 continue
-            existing = AppliedControl.objects.filter(
-                folder=self.folder,
-                reference_control=reference_control,
-                category=reference_control.category,
-            ).first()
-            if existing:
-                results.append({"applied_control": existing, "status": "reuse"})
+            if key in ac_by_key:
+                results.append(
+                    {"applied_control": ac_by_key[key], "status": "reuse"}
+                )
                 continue
             results.append(
                 {
