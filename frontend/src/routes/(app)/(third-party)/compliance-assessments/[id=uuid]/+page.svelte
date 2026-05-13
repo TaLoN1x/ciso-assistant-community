@@ -393,7 +393,8 @@
 	let createAppliedControlsLoading = $state(false);
 
 	async function modalConfirmCreateSuggestedControls(id: string, _name: string, _action: string) {
-		let previewItems: { id: string; label: string }[] = [];
+		type PreviewItem = { id: string; label: string; status: 'create' | 'reuse' | 'linked' };
+		let previewItems: PreviewItem[] = [];
 		try {
 			const previewResponse = await fetch(
 				`/compliance-assessments/${id}/suggestions/applied-controls?dry_run=true`
@@ -410,7 +411,9 @@
 							control?.reference_control?.str ||
 							control?.reference_control?.name ||
 							control?.ref_id ||
-							''
+							'',
+						status:
+							(control?.suggestion_status as 'create' | 'reuse' | 'linked') ?? 'create'
 					}))
 					.filter((item) => {
 						if (seen.has(item.id)) return false;
@@ -431,11 +434,15 @@
 						control?.reference_control?.str ||
 						control?.reference_control?.name ||
 						control?.ref_id ||
-						''
+						'',
+					status: 'create' as const
 				}));
 		}
 
-		if (previewItems.length === 0) return;
+		if (previewItems.length === 0) {
+			createAppliedControlsLoading = false;
+			return;
+		}
 
 		const modalComponent: ModalComponent = {
 			ref: SuggestControlsModal,
@@ -449,7 +456,7 @@
 			component: modalComponent,
 			title: m.suggestControls(),
 			body: m.createAppliedControlsFromSuggestionsConfirmMessage({
-				count: previewItems.length
+				count: previewItems.filter((i) => i.status !== 'linked').length
 			}),
 			response: () => {
 				createAppliedControlsLoading = false;
