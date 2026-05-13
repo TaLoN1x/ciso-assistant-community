@@ -57,6 +57,22 @@ class TestBuiltinMetricsRegistry:
             "total_risk_acceptances",
             "total_frameworks_in_use",
             "risk_scenarios_qualifications_breakdown",
+            # Phase 2 additions
+            "total_assets",
+            "assets_type_breakdown",
+            "total_evidence",
+            "evidence_status_breakdown",
+            "evidence_expiring_30d",
+            "total_vulnerabilities",
+            "vulnerabilities_severity_breakdown",
+            "vulnerabilities_status_breakdown",
+            "tasks_overdue",
+            "tasks_due_7d",
+            "controls_eta_breakdown",
+            "controls_priority_breakdown",
+            "total_audits",
+            "audits_status_breakdown",
+            "audits_avg_progress",
         ]:
             assert expected in keys, f"missing {expected} from Folder registry"
 
@@ -77,6 +93,17 @@ class TestFolderMetricsCompute:
         assert m["incidents_severity_breakdown"] == {}
         assert m["incidents_detection_breakdown"] == {}
         assert m["security_exceptions_status_breakdown"] == {}
+        # Phase 2 additions: new totals must be zero on an empty folder
+        assert m["total_assets"] == 0
+        assert m["total_evidence"] == 0
+        assert m["evidence_expiring_30d"] == 0
+        assert m["total_vulnerabilities"] == 0
+        assert m["tasks_overdue"] == 0
+        assert m["tasks_due_7d"] == 0
+        assert m["total_audits"] == 0
+        assert m["audits_avg_progress"] == 0
+        # ETA breakdown always returns its three buckets, all zero.
+        assert m["controls_eta_breakdown"] == {"On track": 0, "Late": 0, "No ETA": 0}
 
     def test_incident_breakdowns(self, domain):
         Incident.objects.create(

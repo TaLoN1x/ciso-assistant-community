@@ -4389,5 +4389,12 @@
 	"visibilityAuditorOnly": "Auditor only",
 	"visibilityHidden": "Hidden",
 	"answers": "Answers",
-	"respondentAlignment": "Respondent alignment"
+	"respondentAlignment": "Respondent alignment",
+	"thresholds": "Thresholds",
+	"thresholdsHint": "Color the value when conditions match. First matching row wins.",
+	"applyTrafficLightPreset": "Traffic-light preset",
+	"addThreshold": "Add",
+	"noThresholdsConfigured": "No thresholds — value uses the default color.",
+	"useColor": "use",
+	"ifValue": "if value"
 }
