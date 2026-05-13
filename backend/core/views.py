@@ -11254,9 +11254,10 @@ def _preview_suggestions_for_compliance_assessment(
                 )
             dedupe_key = str(rc.id)
             current = best.get(dedupe_key)
-            if current is None or status_priority[status_] < status_priority[
-                current["status"]
-            ]:
+            if (
+                current is None
+                or status_priority[status_] < status_priority[current["status"]]
+            ):
                 best[dedupe_key] = {"applied_control": ac, "status": status_}
     return list(best.values())
 

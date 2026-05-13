@@ -8172,14 +8172,10 @@ class RequirementAssessment(AbstractBaseModel, FolderMixin, ETADueDateMixin):
         for reference_control in reference_controls:
             key = (reference_control.id, reference_control.category)
             if key in linked_keys:
-                results.append(
-                    {"applied_control": ac_by_key[key], "status": "linked"}
-                )
+                results.append({"applied_control": ac_by_key[key], "status": "linked"})
                 continue
             if key in ac_by_key:
-                results.append(
-                    {"applied_control": ac_by_key[key], "status": "reuse"}
-                )
+                results.append({"applied_control": ac_by_key[key], "status": "reuse"})
                 continue
             results.append(
                 {

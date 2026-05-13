@@ -412,8 +412,7 @@
 							control?.reference_control?.name ||
 							control?.ref_id ||
 							'',
-						status:
-							(control?.suggestion_status as 'create' | 'reuse' | 'linked') ?? 'create'
+						status: (control?.suggestion_status as 'create' | 'reuse' | 'linked') ?? 'create'
 					}))
 					.filter((item) => {
 						if (seen.has(item.id)) return false;

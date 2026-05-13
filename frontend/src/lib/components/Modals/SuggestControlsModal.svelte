@@ -32,7 +32,9 @@
 	const linkedItems = $derived(items.filter((i) => i.status === 'linked'));
 	const selectableItems = $derived([...createItems, ...reuseItems]);
 
-	let selectedIds = $state(new Set<string>(items.filter((i) => i.status !== 'linked').map((i) => i.id)));
+	let selectedIds = $state(
+		new Set<string>(items.filter((i) => i.status !== 'linked').map((i) => i.id))
+	);
 	let submitting = $state(false);
 
 	function toggle(id: string) {
@@ -137,12 +139,7 @@
 			{#if selectableItems.length > 1}
 				<div class="px-4 py-2 border-b border-surface-300 sticky top-0 bg-surface-100">
 					<label class="flex items-center gap-2 cursor-pointer font-semibold text-sm">
-						<input
-							type="checkbox"
-							checked={allSelected}
-							onchange={toggleAll}
-							class="checkbox"
-						/>
+						<input type="checkbox" checked={allSelected} onchange={toggleAll} class="checkbox" />
 						{m.selectAll()} ({selectedIds.size}/{selectableItems.length})
 					</label>
 				</div>
