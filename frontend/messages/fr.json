@@ -1153,7 +1153,7 @@
 	"suggestionSectionReuseHelp": "Une mesure appliquée avec la même référence, le même dossier et la même catégorie existe déjà. Elle sera réutilisée et liée ici.",
 	"suggestionSectionLinked": "Déjà en place",
 	"suggestionSectionLinkedHelp": "Ces mesures sont déjà liées. Rien à faire.",
-	"noSuggestionsLeftTooltip": "Toutes les mesures suggérées sont déjà appliquées ici.",
+	"allSuggestionsApplied": "Toutes les suggestions sont appliquées",
 	"ShowAllNodesMessage": "Tout afficher",
 	"ShowOnlyAssessable": "Uniquement évaluables",
 	"NoPreviewMessage": "Aucun aperçu disponible.",

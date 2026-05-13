@@ -650,10 +650,13 @@
 											{#if Object.hasOwn(page.data.user.permissions, 'add_appliedcontrol') && reference_controls.length > 0}
 												{@const nothingToSuggest = actionableSuggestionsCount === 0}
 												<button
-													class="btn self-end bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-white disabled:hover:border-gray-200"
+													class="btn self-end shadow-sm
+														{nothingToSuggest
+															? 'bg-emerald-50 border border-emerald-200 text-emerald-700 cursor-not-allowed pointer-events-none'
+															: 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'}"
 													type="button"
 													disabled={nothingToSuggest || createAppliedControlsLoading}
-													title={nothingToSuggest ? m.noSuggestionsLeftTooltip() : undefined}
+													aria-label={nothingToSuggest ? m.allSuggestionsApplied() : m.suggestControls()}
 													onclick={() => {
 														modalConfirmCreateSuggestedControls(
 															page.data.requirementAssessment.id,
@@ -669,10 +672,14 @@
 																<Progress.CircleRange class="stroke-violet-500" />
 															</Progress.Circle>
 														</Progress>
+														{m.suggestControls()}
+													{:else if nothingToSuggest}
+														<i class="fa-solid fa-circle-check text-emerald-500 mr-2"></i>
+														{m.allSuggestionsApplied()}
 													{:else}
 														<i class="fa-solid fa-wand-magic-sparkles text-violet-500 mr-2"></i>
+														{m.suggestControls()}
 													{/if}
-													{m.suggestControls()}
 												</button>
 											{/if}
 											<button

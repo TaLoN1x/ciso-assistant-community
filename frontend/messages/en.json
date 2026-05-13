@@ -1268,7 +1268,7 @@
 	"suggestionSectionReuseHelp": "An applied control with the same reference, folder and category already exists. It will be reused and linked here.",
 	"suggestionSectionLinked": "Already in place",
 	"suggestionSectionLinkedHelp": "These controls are already linked. Nothing to do.",
-	"noSuggestionsLeftTooltip": "All suggested controls are already applied here.",
+	"allSuggestionsApplied": "All suggestions applied",
 	"ShowAllNodesMessage": "Show all",
 	"ShowOnlyAssessable": "Only assessable",
 	"NoPreviewMessage": "No preview available.",
