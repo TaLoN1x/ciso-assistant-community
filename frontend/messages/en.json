@@ -1262,6 +1262,7 @@
 	"userLinkedToRepresentative": "A user is already linked to this representative.",
 	"nameDuplicate": "Name already exists",
 	"noAnswer": "No answer",
+	"clearAnswer": "Clear answer",
 	"entityAssessmentRepresentativesHelpText": "The third party users who are responsible for questionnaire completion",
 	"sendQuestionnaire": "Send questionnaire",
 	"sureToSendQuestionnaire": "Are you sure you want to send the questionnaire: {questionnaire}?",
@@ -4360,5 +4361,15 @@
 	"visibilityAuditorOnly": "Auditor only",
 	"visibilityHidden": "Hidden",
 	"answers": "Answers",
-	"respondentAlignment": "Respondent alignment"
+	"respondentAlignment": "Respondent alignment",
+	"frameworkRefId": "Ref ID",
+	"urnPreview": "URN preview:",
+	"urnLockedComplianceAssessment": "Locked — a compliance assessment uses this framework.",
+	"sliderMin": "Min",
+	"sliderMax": "Max",
+	"sliderStep": "Step",
+	"sliderNeedsAtLeastTwoChoices": "Slider needs at least 2 choices.",
+	"sliderMinMustBeLessThanMax": "Slider min must be less than max.",
+	"sliderStepMustBeGreaterThanZero": "Slider step must be greater than 0.",
+	"sliderStepCannotExceedRange": "Slider step cannot exceed (max − min)."
 }
