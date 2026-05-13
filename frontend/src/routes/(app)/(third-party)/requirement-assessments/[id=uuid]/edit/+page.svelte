@@ -17,6 +17,7 @@
 
 	import { complianceResultColorMap } from '$lib/utils/constants';
 	import { hideSuggestions } from '$lib/utils/stores';
+	import { breadcrumbs } from '$lib/utils/breadcrumbs';
 	import { m } from '$paraglide/messages';
 	import { countMasked } from '$lib/utils/related-visibility';
 	import CommentsPanel from '$lib/components/CommentsPanel/CommentsPanel.svelte';
@@ -266,16 +267,18 @@
 		showObservation,
 		showAppliedControls,
 		showEvidences,
-		showSecurityExceptions,
-		showRespondentAlignment
-	} = getFieldVisibility(fw, complianceAssessment, viewerRole);
+		showRespondentAlignment,
+		showComments
+	} = getFieldVisibility(complianceAssessment, viewerRole);
 
+	const isAuditor = viewerRole === 'auditor';
 	const canShowAppliedControls = showAppliedControls && !page.data.user.is_third_party;
 
 	function pickDefaultTab(): string {
 		if (canShowAppliedControls) return 'applied_controls';
 		if (showEvidences) return 'evidences';
-		if (showSecurityExceptions) return 'security_exceptions';
+		// Security exceptions are auditor-only — not part of the per-CA visibility model.
+		if (isAuditor) return 'security_exceptions';
 		return 'applied_controls';
 	}
 	let group = $state(pickDefaultTab());
@@ -329,6 +332,13 @@
 
 	$effect(() => {
 		if (createAppliedControlsLoading === true && form) createAppliedControlsLoading = false;
+	});
+
+	$effect(() => {
+		breadcrumbs.updateCrumb(/^\/requirement-assessments\/[^/]+\/edit/, {
+			label: data.requirementAssessment.name,
+			href: page.url.pathname + page.url.search
+		});
 	});
 
 	let computedScoreAndResult = $derived(
@@ -572,7 +582,7 @@
 			{...rest}
 		>
 			{#snippet children({ form, data })}
-				{#if canShowAppliedControls || showEvidences || showSecurityExceptions}
+				{#if canShowAppliedControls || showEvidences || isAuditor}
 					<div class="card shadow-lg bg-white">
 						<Tabs
 							value={group}
@@ -587,7 +597,7 @@
 								{#if showEvidences}
 									<Tabs.Trigger value="evidences">{m.evidences()}</Tabs.Trigger>
 								{/if}
-								{#if showSecurityExceptions}
+								{#if isAuditor}
 									<Tabs.Trigger value="security_exceptions">{m.securityExceptions()}</Tabs.Trigger>
 								{/if}
 								<Tabs.Indicator />
@@ -695,7 +705,7 @@
 									</div>
 								</Tabs.Content>
 							{/if}
-							{#if showSecurityExceptions}
+							{#if isAuditor}
 								<Tabs.Content value="security_exceptions">
 									<div class="h-full flex flex-col space-y-2 rounded-container p-4">
 										<span class="flex flex-row justify-end items-center">
@@ -904,7 +914,7 @@
 			{/snippet}
 		</SuperForm>
 	</div>
-	{#if page.data?.featureflags?.comments}
+	{#if page.data?.featureflags?.comments && showComments}
 		<CommentsPanel parentType="requirement_assessment" parentId={data.requirementAssessment.id} />
 	{/if}
 </div>
