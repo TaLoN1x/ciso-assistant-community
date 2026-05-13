@@ -806,7 +806,12 @@ class BuiltinMetricSample(AbstractBaseModel):
         # Assets
         assets = scope(Asset.objects.all())
         total_assets = assets.count()
-        assets_type_labels = {choice[0]: choice[1] for choice in Asset.Type.choices}
+        # Labels for Asset.Type / Evidence.Status / Vulnerability.Status / Assessment.Status
+        # come from gettext_lazy proxies. They satisfy dict.get/__eq__ but JSON serialization
+        # rejects them as dict keys, so force str() at construction time.
+        assets_type_labels = {
+            choice[0]: str(choice[1]) for choice in Asset.Type.choices
+        }
         assets_type_breakdown = {
             assets_type_labels.get(k, str(k)): v
             for k, v in assets.values("type")
@@ -818,7 +823,7 @@ class BuiltinMetricSample(AbstractBaseModel):
         evidence = scope(Evidence.objects.all())
         total_evidence = evidence.count()
         evidence_status_labels = {
-            choice[0]: choice[1] for choice in Evidence.Status.choices
+            choice[0]: str(choice[1]) for choice in Evidence.Status.choices
         }
         evidence_status_breakdown = {
             evidence_status_labels.get(k, str(k)): v
@@ -845,7 +850,7 @@ class BuiltinMetricSample(AbstractBaseModel):
             severity_labels.get(k, str(k)): v for k, v in vuln_severity_raw.items()
         }
         vuln_status_labels = {
-            choice[0]: choice[1] for choice in Vulnerability.Status.choices
+            choice[0]: str(choice[1]) for choice in Vulnerability.Status.choices
         }
         vulnerabilities_status_breakdown = {
             vuln_status_labels.get(k, str(k)): v
@@ -889,7 +894,7 @@ class BuiltinMetricSample(AbstractBaseModel):
         # Audits rollup: count, status breakdown, mean progress.
         total_audits = audits_qs.count()
         audit_status_labels = {
-            choice[0]: choice[1] for choice in ComplianceAssessment.Status.choices
+            choice[0]: str(choice[1]) for choice in ComplianceAssessment.Status.choices
         }
         audits_status_breakdown = {
             audit_status_labels.get(k, str(k) if k else str(_("Unset"))): v

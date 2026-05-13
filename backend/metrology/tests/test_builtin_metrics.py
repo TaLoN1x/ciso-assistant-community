@@ -1,9 +1,13 @@
 """Tests for the builtin metric registry and computation logic."""
 
+import json
+
 import pytest
 
 from core.models import (
+    Asset,
     AppliedControl,
+    Evidence,
     Incident,
     RiskAssessment,
     RiskMatrix,
@@ -12,6 +16,7 @@ from core.models import (
     Severity,
     Perimeter,
     Terminology,
+    Vulnerability,
 )
 from iam.models import Folder
 from metrology.builtin_metrics import (
@@ -104,6 +109,22 @@ class TestFolderMetricsCompute:
         assert m["audits_avg_progress"] == 0
         # ETA breakdown always returns its three buckets, all zero.
         assert m["controls_eta_breakdown"] == {"On track": 0, "Late": 0, "No ETA": 0}
+
+    def test_breakdown_dicts_are_json_serializable(self, domain):
+        """Regression: gettext_lazy proxies satisfy dict.get but break json.dumps as keys."""
+        # Seed one row per choice type that historically used lazy labels, so every
+        # affected breakdown has at least one populated key.
+        Asset.objects.create(name="A1", folder=domain, type=Asset.Type.PRIMARY)
+        Evidence.objects.create(
+            name="E1", folder=domain, status=Evidence.Status.APPROVED
+        )
+        Vulnerability.objects.create(
+            name="V1", folder=domain, status=Vulnerability.Status.EXPLOITABLE
+        )
+
+        m = BuiltinMetricSample.compute_metrics(domain)
+        # json.dumps will raise TypeError if any nested dict key is a lazy proxy.
+        json.dumps(m)
 
     def test_incident_breakdowns(self, domain):
         Incident.objects.create(
