@@ -393,6 +393,8 @@
 	let createAppliedControlsLoading = $state(false);
 
 	async function modalConfirmCreateSuggestedControls(id: string, _name: string, _action: string) {
+		if (createAppliedControlsLoading) return;
+		createAppliedControlsLoading = true;
 		type PreviewItem = { id: string; label: string; status: 'create' | 'reuse' | 'linked' };
 		let previewItems: PreviewItem[] = [];
 		try {
@@ -461,7 +463,6 @@
 				createAppliedControlsLoading = false;
 			}
 		};
-		createAppliedControlsLoading = true;
 		modalStore.trigger(modal);
 	}
 

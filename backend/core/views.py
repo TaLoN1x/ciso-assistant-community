@@ -11192,7 +11192,7 @@ def _preview_suggestions_for_compliance_assessment(
     )
 
     selected_ids_set = (
-        set(selected_reference_control_ids)
+        {str(v) for v in selected_reference_control_ids}
         if selected_reference_control_ids is not None
         else None
     )
@@ -11215,7 +11215,7 @@ def _preview_suggestions_for_compliance_assessment(
         folder_ids.add(ra.folder_id)
 
     ac_by_key: dict = {}
-    linked_keys: set = set()
+    linked_ac_by_ra_key: dict = {}
     if all_ref_ids and folder_ids:
         ac_qs = (
             AppliedControl.objects.filter(
@@ -11229,16 +11229,18 @@ def _preview_suggestions_for_compliance_assessment(
             key = (ac.folder_id, ac.reference_control_id, ac.category)
             ac_by_key.setdefault(key, ac)
             for linked_ra in ac.requirement_assessments.all():
-                linked_keys.add((linked_ra.id, key[0], key[1], key[2]))
+                # Track the actually-linked AC per (RA, key), not just first seen.
+                linked_ac_by_ra_key[(linked_ra.id, *key)] = ac
 
     status_priority = {"create": 0, "reuse": 1, "linked": 2}
     best: dict = {}
     for ra_id, (ra, ref_ctrls) in ref_ctrls_by_ra.items():
         for rc in ref_ctrls:
             key = (ra.folder_id, rc.id, rc.category)
-            if (ra_id, *key) in linked_keys:
+            linked_ac = linked_ac_by_ra_key.get((ra_id, *key))
+            if linked_ac is not None:
                 status_ = "linked"
-                ac = ac_by_key[key]
+                ac = linked_ac
             elif key in ac_by_key:
                 status_ = "reuse"
                 ac = ac_by_key[key]

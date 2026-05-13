@@ -8149,7 +8149,7 @@ class RequirementAssessment(AbstractBaseModel, FolderMixin, ETADueDateMixin):
             return results
         reference_controls = list(self.requirement.reference_controls.all())
         if selected_reference_control_ids is not None:
-            ids_set = set(selected_reference_control_ids)
+            ids_set = {str(v) for v in selected_reference_control_ids}
             reference_controls = [
                 rc for rc in reference_controls if str(rc.id) in ids_set
             ]
@@ -8163,16 +8163,19 @@ class RequirementAssessment(AbstractBaseModel, FolderMixin, ETADueDateMixin):
             reference_control_id__in=ref_ids,
         ).prefetch_related("requirement_assessments")
         ac_by_key: dict = {}
-        linked_keys: set = set()
+        linked_by_key: dict = {}
         for ac in ac_qs:
             key = (ac.reference_control_id, ac.category)
             ac_by_key.setdefault(key, ac)
             if any(ra.id == self.id for ra in ac.requirement_assessments.all()):
-                linked_keys.add(key)
+                # Track the actually-linked instance, not just any AC with the key.
+                linked_by_key[key] = ac
         for reference_control in reference_controls:
             key = (reference_control.id, reference_control.category)
-            if key in linked_keys:
-                results.append({"applied_control": ac_by_key[key], "status": "linked"})
+            if key in linked_by_key:
+                results.append(
+                    {"applied_control": linked_by_key[key], "status": "linked"}
+                )
                 continue
             if key in ac_by_key:
                 results.append({"applied_control": ac_by_key[key], "status": "reuse"})

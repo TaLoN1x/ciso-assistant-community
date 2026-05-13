@@ -195,6 +195,8 @@
 	});
 
 	async function modalConfirmCreateSuggestedControls(id: string, _name: string, _action: string) {
+		if (createAppliedControlsLoading) return;
+		createAppliedControlsLoading = true;
 		let previewItems: PreviewItem[] = [];
 		const fetched = await fetchSuggestionsPreview(id);
 		if (fetched) {
@@ -247,7 +249,6 @@
 				}
 			}
 		};
-		createAppliedControlsLoading = true;
 		modalStore.trigger(modal);
 	}
 
