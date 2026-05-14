@@ -1428,6 +1428,7 @@ export const TaskTemplateSchema = z.object({
 	objectives: z.string().uuid().optional().array().optional(),
 	incidents: z.string().uuid().optional().array().optional(),
 	observation: z.string().optional(),
+	filtering_labels: z.string().optional().array().optional(),
 	evidences: z.union([z.string().uuid(), z.string()]).optional().array().optional(), // Allow both UUIDs and strings for evidences created from the form
 	schedule: z
 		.object({
@@ -1825,4 +1826,17 @@ export const webhookEndpointSchema = z.object({
 	secret: z.string().min(1).optional(),
 	target_folders: z.string().uuid().optional().array().optional(),
 	payload_format: z.enum(['thin', 'full']).default('full')
+});
+
+export const activateTOTPSchema: ZodSchema = z.object({
+	code: z
+		.string()
+		.regex(/^\d{6}$/)
+		.min(6)
+		.max(6)
+});
+
+export const registerWebAuthnSchema: ZodSchema = z.object({
+	name: z.string().min(1).max(100),
+	credential: z.any()
 });

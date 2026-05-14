@@ -124,6 +124,13 @@ READER_PERMISSIONS_LIST = [
     "delete_chatsession",
     "view_chatmessage",
     "view_indexeddocument",
+    # Questionnaire Autopilot — read-only at this role. AgentAction is the
+    # AI's audit trail and must stay immutable; QuestionnaireRun is shared
+    # across users in a domain. Write permissions live in ANALYST and up.
+    "view_questionnairerun",
+    "view_questionnairequestion",
+    "view_agentrun",
+    "view_agentaction",
 ]
 
 APPROVER_PERMISSIONS_LIST = [
@@ -227,6 +234,13 @@ APPROVER_PERMISSIONS_LIST = [
     "delete_chatsession",
     "view_chatmessage",
     "view_indexeddocument",
+    # Questionnaire Autopilot — read-only at this role. AgentAction is the
+    # AI's audit trail and must stay immutable; QuestionnaireRun is shared
+    # across users in a domain. Write permissions live in ANALYST and up.
+    "view_questionnairerun",
+    "view_questionnairequestion",
+    "view_agentrun",
+    "view_agentaction",
 ]
 
 ANALYST_PERMISSIONS_LIST = [
@@ -570,6 +584,22 @@ ANALYST_PERMISSIONS_LIST = [
     "add_indexeddocument",
     "view_indexeddocument",
     "delete_indexeddocument",
+    "add_questionnairerun",
+    "view_questionnairerun",
+    "change_questionnairerun",
+    "delete_questionnairerun",
+    "add_questionnairequestion",
+    "view_questionnairequestion",
+    "change_questionnairequestion",
+    "delete_questionnairequestion",
+    "add_agentrun",
+    "view_agentrun",
+    "change_agentrun",
+    "delete_agentrun",
+    "add_agentaction",
+    "view_agentaction",
+    "change_agentaction",
+    "delete_agentaction",
 ]
 
 DOMAIN_MANAGER_PERMISSIONS_LIST = [
@@ -958,6 +988,22 @@ DOMAIN_MANAGER_PERMISSIONS_LIST = [
     "add_indexeddocument",
     "view_indexeddocument",
     "delete_indexeddocument",
+    "add_questionnairerun",
+    "view_questionnairerun",
+    "change_questionnairerun",
+    "delete_questionnairerun",
+    "add_questionnairequestion",
+    "view_questionnairequestion",
+    "change_questionnairequestion",
+    "delete_questionnairequestion",
+    "add_agentrun",
+    "view_agentrun",
+    "change_agentrun",
+    "delete_agentrun",
+    "add_agentaction",
+    "view_agentaction",
+    "change_agentaction",
+    "delete_agentaction",
 ]
 
 ADMINISTRATOR_PERMISSIONS_LIST = [
@@ -1403,6 +1449,22 @@ ADMINISTRATOR_PERMISSIONS_LIST = [
     "view_indexeddocument",
     "change_indexeddocument",
     "delete_indexeddocument",
+    "add_questionnairerun",
+    "view_questionnairerun",
+    "change_questionnairerun",
+    "delete_questionnairerun",
+    "add_questionnairequestion",
+    "view_questionnairequestion",
+    "change_questionnairequestion",
+    "delete_questionnairequestion",
+    "add_agentrun",
+    "view_agentrun",
+    "change_agentrun",
+    "delete_agentrun",
+    "add_agentaction",
+    "view_agentaction",
+    "change_agentaction",
+    "delete_agentaction",
 ]
 
 THIRD_PARTY_RESPONDENT_PERMISSIONS_LIST = [

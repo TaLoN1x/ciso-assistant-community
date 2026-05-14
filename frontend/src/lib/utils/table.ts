@@ -2655,7 +2655,8 @@ export const listViewFields = {
 			'lastOccurrenceStatus',
 			'nextOccurrence',
 			'nextOccurrenceStatus',
-			'folder'
+			'folder',
+			'labels'
 		],
 		body: [
 			'ref_id',
@@ -2666,14 +2667,16 @@ export const listViewFields = {
 			'last_occurrence_status',
 			'next_occurrence',
 			'next_occurrence_status',
-			'folder'
+			'folder',
+			'filtering_labels'
 		],
 		filters: {
 			folder: DOMAIN_FILTER,
 			assigned_to: TASK_TEMPLATE_ASSIGNED_TO_FILTER,
 			is_recurrent: IS_RECURRENT_FILTER,
 			last_occurrence_status: LAST_OCCURENCE_STATUS_FILTER,
-			next_occurrence_status: NEXT_OCCURENCE_STATUS_FILTER
+			next_occurrence_status: NEXT_OCCURENCE_STATUS_FILTER,
+			filtering_labels: LABELS_FILTER
 		}
 	},
 	'task-nodes': {
