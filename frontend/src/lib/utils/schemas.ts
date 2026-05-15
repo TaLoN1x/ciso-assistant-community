@@ -1582,6 +1582,45 @@ export const AccreditationSchema = z.object({
 	filtering_labels: z.array(z.string().uuid().optional()).optional()
 });
 
+export const ResponsibilityRoleSchema = z.object({
+	...NameDescriptionMixin,
+	folder: z.string(),
+	code: z.string().min(1).max(8),
+	color: z.string().optional(),
+	order: z.coerce.number().int().min(0).default(0),
+	taxonomy: z.string().default('custom'),
+	is_visible: z.boolean().default(true),
+	builtin: z.boolean().default(false)
+});
+
+export const ResponsibilityMatrixSchema = z.object({
+	...NameDescriptionMixin,
+	folder: z.string(),
+	ref_id: z.string().optional(),
+	preset: z.enum(['raci', 'rasci', 'rapid', 'custom']).default('raci'),
+	roles: z.array(z.string().uuid().optional()).optional(),
+	filtering_labels: z.array(z.string().uuid().optional()).optional()
+});
+
+export const ResponsibilityMatrixActivitySchema = z.object({
+	name: z.string().min(1).max(500),
+	description: z.string().optional(),
+	order: z.coerce.number().int().min(0).default(0),
+	matrix: z.string().uuid()
+});
+
+export const ResponsibilityMatrixActorSchema = z.object({
+	matrix: z.string().uuid(),
+	actor: z.string().uuid(),
+	order: z.coerce.number().int().min(0).default(0)
+});
+
+export const ResponsibilityAssignmentSchema = z.object({
+	activity: z.string().uuid(),
+	actor: z.string().uuid(),
+	role: z.string().uuid()
+});
+
 // Metrology
 export const MetricDefinitionSchema = z.object({
 	...NameDescriptionMixin,
@@ -1754,6 +1793,11 @@ const SCHEMA_MAP: Record<string, ZodSchema> = {
 	roles: RoleSchema,
 	'generic-collections': GenericCollectionSchema,
 	accreditations: AccreditationSchema,
+	'responsibility-roles': ResponsibilityRoleSchema,
+	'responsibility-matrices': ResponsibilityMatrixSchema,
+	'responsibility-matrix-activities': ResponsibilityMatrixActivitySchema,
+	'responsibility-matrix-actors': ResponsibilityMatrixActorSchema,
+	'responsibility-assignments': ResponsibilityAssignmentSchema,
 	'metric-definitions': MetricDefinitionSchema,
 	'metric-instances': MetricInstanceSchema,
 	'custom-metric-samples': CustomMetricSampleSchema,
